@@ -8,3 +8,7 @@ dashboard/_site/
 dashboard/.quarto/
 dashboard/index_files/
 dashboard/index.html
+# raw API dumps (ingest.tally --dump-raw) and manual exports contain personal data
+*.json
+*.xls
+*.xlsx

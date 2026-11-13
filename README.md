@@ -61,6 +61,10 @@ location /community/ {
 
 ## Day to day
 
+- Tests (also run by GitHub Actions on every PR): `pip install -r requirements-dev.txt && python -m pytest tests`,
+  plus a fake-data render — see AGENTS.md "Testing". The PR's Actions run has the rendered page as
+  a downloadable `dashboard-preview` artifact.
+
 - Live-edit the dashboard: `cd dashboard && quarto preview index.qmd`
 - Use a manual CSV instead of the API: `.venv/bin/python -m ingest.tally --csv export.csv`
 - Check what the Tally API returns: `... -m ingest.tally --dump-raw raw.json` (contains personal data — delete after)

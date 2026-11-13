@@ -17,7 +17,7 @@ Never use the real `data/` directory for this.
    export OPENMS_DATA_DIR=<scratch>/data
    python scripts/make_fake_data.py
    (cd dashboard && QUARTO_PYTHON=$(realpath -s <python>) quarto render index.qmd)
-   python scripts/check_render.py dashboard/index.html
+   python scripts/check_render.py dashboard/index.html --strict
    ```
 
    A failed cell makes `quarto render` exit non-zero and prints the traceback — read it, fix, rerun.
@@ -30,7 +30,10 @@ Never use the real `data/` directory for this.
 4. Also test the "nothing ingested yet" case: render once with an empty `OPENMS_DATA_DIR`
    — every card must show a placeholder, not crash.
 
-5. Clean up: `rm -rf dashboard/index.html dashboard/index_files dashboard/.quarto`.
+5. Run the unit tests too: `python -m pytest tests` (install `requirements-dev.txt`).
+   CI runs the same steps on every PR (`.github/workflows/test.yml`).
+
+6. Clean up: `rm -rf dashboard/index.html dashboard/index_files dashboard/.quarto`.
 
 Layout can't be checked from HTML alone. If a browser isn't available, tell the user to run
 `cd dashboard && quarto preview index.qmd` and look at it.

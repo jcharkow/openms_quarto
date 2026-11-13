@@ -31,5 +31,6 @@ Read AGENTS.md first (privacy rules, history rules, conventions).
 
 5. **Fake data**: extend `scripts/make_fake_data.py` with realistic fake rows for the new tables.
 
-6. **Test**: mock the client and run `main()` twice against a scratch `OPENMS_DATA_DIR` (checks
-   incremental merge + de-dup), then run the `test-dashboard` skill.
+6. **Test**: add `tests/test_<source>.py` — subclass the client with a fake `get`, use the
+   `data_dir` fixture, run `main()` twice (checks incremental merge + de-dup). Then run the
+   `test-dashboard` skill; `check_render.py --strict` in CI fails until the fake data covers the new page.

@@ -21,7 +21,9 @@ Studio in 2026). Keep it lightweight: no database, no app server, no SaaS in the
 | `ingest/discord_snapshot.py` | → `discord_daily`, `discord_members`, `discord_messages` |
 | `dashboard/index.qmd` | The whole dashboard (one file, `#` headings = pages) |
 | `scripts/make_fake_data.py` | Fake data for every table, for offline testing |
-| `scripts/check_render.py` | Prints value boxes / placeholders of a rendered page; fails on tracebacks |
+| `scripts/check_render.py` | Prints value boxes / placeholders of a rendered page; fails on tracebacks (`--strict`: also on placeholders) |
+| `tests/` | pytest unit tests for ingest + survey cleaning (fake API clients, no network) |
+| `.github/workflows/test.yml` | CI: pytest + fake-data render on PRs |
 | `openms_survey_report.py` | Legacy PDF report from a CSV export; imports `ingest/common.py` |
 
 Ingest modules run as `python -m ingest.<name>` from the repo root.
@@ -57,18 +59,26 @@ Ingest modules run as `python -m ingest.<name>` from the repo root.
 
 ## Testing
 
-No test suite; verify by rendering with fake data:
+CI (`.github/workflows/test.yml`, on every PR and push to master/main) runs both of these;
+run them locally before pushing:
 
 ```bash
-export OPENMS_DATA_DIR=$(mktemp -d)
+pip install -r requirements-dev.txt
+python -m pytest tests                       # ingest logic with fake API clients, no network
+
+export OPENMS_DATA_DIR=$(mktemp -d)          # dashboard render with fake data
 python scripts/make_fake_data.py
 (cd dashboard && quarto render index.qmd)
-python scripts/check_render.py dashboard/index.html
+python scripts/check_render.py dashboard/index.html --strict
 rm -rf dashboard/index.html dashboard/index_files dashboard/.quarto
 ```
 
-For ingest changes, mock the API client (`Discord.get` / `GitHub.get`) and run `main()` twice
-against a scratch `OPENMS_DATA_DIR` to check incremental behaviour and de-duplication.
+`--strict` fails if any card shows a placeholder, so a new table needs fake rows in
+`make_fake_data.py`. CI also renders with an empty data dir (first-run state) and uploads the
+fake-data dashboard as the `dashboard-preview` artifact.
+
+Ingest tests live in `tests/`: subclass the API client (`FakeDiscord`, `FakeGitHub`), use the
+`data_dir` fixture, and call `main()` twice to check incremental merge and de-duplication.
 See `.claude/skills/` for step-by-step workflows.
 
 ## Known gotchas
