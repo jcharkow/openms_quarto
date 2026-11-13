@@ -1,0 +1,472 @@
+---
+title: "OpenMS Community"
+format:
+  dashboard:
+    theme: cosmo
+execute:
+  echo: false
+  warning: false
+---
+
+```{python}
+#| include: false
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path.cwd().parent))
+
+import pandas as pd
+import plotly.express as px
+import plotly.io as pio
+from IPython.display import Markdown, display
+from itables import init_notebook_mode, show
+
+from ingest.common import read_table
+
+pio.templates.default = "plotly_white"
+init_notebook_mode(all_interactive=False, connected=False)
+BLUE, ORANGE = "#2E75B6", "#C55A11"
+
+def none_msg(what):
+    return Markdown(f"*No {what} data yet. Run the matching ingest script (see README).*")
+
+def hbar(counts: pd.Series, title="", xlabel="Respondents"):
+    d = counts.sort_values().reset_index()
+    d.columns = ["label", "n"]
+    fig = px.bar(d, x="n", y="label", orientation="h", text="n", title=title,
+                 color_discrete_sequence=[BLUE], labels={"n": xlabel, "label": ""})
+    fig.update_layout(height=max(260, 28 * len(d) + 90), margin=dict(l=10, r=10, t=40, b=10))
+    return fig
+
+def per_period(dates: pd.Series, label="Per period"):
+    dates = dates.dropna()
+    span = (dates.max() - dates.min()).days if len(dates) else 0
+    freq = "D" if span <= 60 else ("W" if span <= 365 else "MS")
+    s = dates.dt.floor("D").value_counts().sort_index().resample(freq).sum()
+    d = pd.DataFrame({"date": s.index, label: s.values, "Cumulative": s.cumsum().values})
+    fig = px.bar(d, x="date", y=label, color_discrete_sequence=[BLUE])
+    fig.add_scatter(x=d.date, y=d.Cumulative, name="Cumulative", yaxis="y2", line=dict(color=ORANGE, width=2))
+    fig.update_layout(yaxis2=dict(overlaying="y", side="right", title="Cumulative", showgrid=False),
+                      legend=dict(orientation="h", y=1.1), margin=dict(l=10, r=10, t=30, b=10), xaxis_title="")
+    return fig
+
+resp = read_table("survey_respondents")
+choices = read_table("survey_choices")
+stars = read_table("github_stars")
+gh_daily = read_table("github_daily")
+issues = read_table("github_issues")
+contribs = read_table("github_contributors")
+releases = read_table("github_releases")
+traffic = read_table("github_traffic")
+dc_daily = read_table("discord_daily")
+dc_msgs = read_table("discord_messages")
+dc_members = read_table("discord_members")
+
+n_resp = len(resp) if resp is not None else 0
+if issues is not None:
+    issues = issues[~issues.is_bot]
+if dc_msgs is not None:
+    dc_msgs = dc_msgs[~dc_msgs.author_is_bot]
+if dc_members is not None:
+    dc_members = dc_members[~dc_members.is_bot]
+    dc_current = dc_members[dc_members.left_seen.isna()]
+updated = pd.Timestamp.now().strftime("%d %b %Y %H:%M")
+```
+
+# Overview
+
+## Row {height=22%}
+
+```{python}
+#| content: valuebox
+#| title: "Survey sign-ups"
+dict(icon="clipboard-check", color="primary", value=n_resp)
+```
+
+```{python}
+#| content: valuebox
+#| title: "GitHub stars"
+dict(icon="star", color="warning",
+     value=int(gh_daily.sort_values("date").groupby("repo").stars.last().sum()) if gh_daily is not None else "–")
+```
+
+```{python}
+#| content: valuebox
+#| title: "Contributors"
+dict(icon="people", color="info",
+     value=contribs.loc[~contribs.is_bot, "login"].nunique() if contribs is not None else "–")
+```
+
+```{python}
+#| content: valuebox
+#| title: "Discord members"
+dict(icon="discord", color="success",
+     value=int(dc_daily.sort_values("date").members.iloc[-1]) if dc_daily is not None else "–")
+```
+
+## Row
+
+```{python}
+#| title: Survey sign-ups over time
+per_period(resp.submitted_at, "Sign-ups") if n_resp else none_msg("survey")
+```
+
+```{python}
+#| title: GitHub stars over time
+if stars is not None and not stars.empty:
+    s = stars.sort_values("starred_at").assign(n=1)
+    s["Stars"] = s.groupby("repo").n.cumsum()
+    fig = px.line(s, x="starred_at", y="Stars", color="repo", labels={"starred_at": ""})
+    fig.update_layout(margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h", y=1.1))
+    fig
+else:
+    none_msg("GitHub")
+```
+
+```{python}
+#| title: Data freshness
+tables = {"Survey respondents": resp, "GitHub stars": stars, "GitHub issues/PRs": issues,
+          "Discord daily snapshots": dc_daily, "Discord messages": dc_msgs}
+rows = "\n".join(f"| {k} | {len(v) if v is not None else 'not ingested'} |" for k, v in tables.items())
+Markdown(f"Built **{updated}**\n\n| Table | Rows |\n|---|---|\n{rows}")
+```
+
+# Survey
+
+## Row {height=22%}
+
+```{python}
+#| content: valuebox
+#| title: "Unique respondents"
+dict(icon="person", color="primary",
+     value=resp.email_hash.nunique() if n_resp and resp.email_hash.notna().any() else n_resp)
+```
+
+```{python}
+#| content: valuebox
+#| title: "Newsletter sign-ups"
+dict(icon="envelope", color="info", value=int(resp.newsletter.sum()) if n_resp else 0)
+```
+
+```{python}
+#| content: valuebox
+#| title: "Want email contact"
+dict(icon="chat-dots", color="success", value=int(resp.reach_email.sum()) if n_resp else 0)
+```
+
+```{python}
+#| content: valuebox
+#| title: "Distinct affiliations"
+dict(icon="building", color="secondary", value=resp.affiliation_norm.nunique() if n_resp else 0)
+```
+
+## Row
+
+### Column {.tabset}
+
+```{python}
+#| title: Role
+hbar(resp.role.value_counts()) if n_resp else none_msg("survey")
+```
+
+```{python}
+#| title: Areas of interest
+if choices is not None and not choices[choices.question == "interest"].empty:
+    hbar(choices[choices.question == "interest"].option.value_counts(), "Multi-select: totals exceed respondents")
+else:
+    none_msg("interest")
+```
+
+```{python}
+#| title: Platforms
+if choices is not None and not choices[choices.question == "platform"].empty:
+    hbar(choices[choices.question == "platform"].option.value_counts(), "Multi-select")
+else:
+    none_msg("platform")
+```
+
+```{python}
+#| title: Interest by role
+if n_resp and choices is not None and not choices.empty:
+    m = (choices[choices.question == "interest"].merge(resp[["submission_id", "role"]], on="submission_id")
+         .pivot_table(index="role", columns="option", values="submission_id", aggfunc="count", fill_value=0))
+    top_roles = resp.role.value_counts().head(8).index
+    m = m.reindex([r for r in top_roles if r in m.index])
+    fig = px.imshow(m, text_auto=True, color_continuous_scale="Blues", aspect="auto", labels=dict(x="", y="", color="n"))
+    fig.update_layout(margin=dict(l=10, r=10, t=10, b=10))
+    fig
+else:
+    none_msg("survey")
+```
+
+### Column
+
+```{python}
+#| title: Top affiliations
+if n_resp:
+    a = resp.affiliation_norm.value_counts().rename_axis("Affiliation").reset_index(name="Respondents")
+    show(a, paging=True, pageLength=15, searching=True)
+else:
+    none_msg("survey")
+```
+
+# GitHub
+
+## Row {height=22%}
+
+```{python}
+#| content: valuebox
+#| title: "Open issues"
+dict(icon="exclamation-circle", color="warning",
+     value=int(((~issues.is_pr) & (issues.state == "open")).sum()) if issues is not None else "–")
+```
+
+```{python}
+#| content: valuebox
+#| title: "Open PRs"
+dict(icon="git", color="info",
+     value=int((issues.is_pr & (issues.state == "open")).sum()) if issues is not None else "–")
+```
+
+```{python}
+#| content: valuebox
+#| title: "PRs merged (last 90 days)"
+cut = pd.Timestamp.now() - pd.Timedelta(days=90)
+dict(icon="check2-circle", color="success",
+     value=int((issues.merged_at >= cut).sum()) if issues is not None else "–")
+```
+
+```{python}
+#| content: valuebox
+#| title: "New PR authors (last 90 days)"
+if issues is not None:
+    prs = issues[issues.is_pr]
+    first = prs.groupby("author").created_at.min()
+    v = int((first >= cut).sum())
+else:
+    v = "–"
+dict(icon="person-plus", color="primary", value=v)
+```
+
+## Row
+
+```{python}
+#| title: Issues and PRs opened per month
+if issues is not None and not issues.empty:
+    d = issues.assign(month=issues.created_at.dt.to_period("M").dt.to_timestamp(),
+                      kind=issues.is_pr.map({True: "Pull requests", False: "Issues"}))
+    d = d[d.month >= pd.Timestamp.now() - pd.DateOffset(years=3)]
+    fig = px.bar(d.groupby(["month", "kind"]).size().reset_index(name="n"), x="month", y="n", color="kind",
+                 barmode="group", labels={"month": "", "n": "Opened", "kind": ""},
+                 color_discrete_sequence=[BLUE, ORANGE])
+    fig.update_layout(margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h", y=1.1))
+    fig
+else:
+    none_msg("GitHub")
+```
+
+```{python}
+#| title: Monthly active PR authors
+if issues is not None and not issues.empty:
+    p = issues[issues.is_pr].assign(month=lambda x: x.created_at.dt.to_period("M").dt.to_timestamp())
+    p = p[p.month >= pd.Timestamp.now() - pd.DateOffset(years=3)]
+    first = p.groupby("author").created_at.transform("min")
+    p["type"] = (p.created_at == first).map({True: "First-time", False: "Returning"})
+    d = p.groupby(["month", "type"]).author.nunique().reset_index(name="authors")
+    fig = px.bar(d, x="month", y="authors", color="type", labels={"month": "", "type": ""},
+                 color_discrete_sequence=[BLUE, ORANGE])
+    fig.update_layout(margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h", y=1.1))
+    fig
+else:
+    none_msg("GitHub")
+```
+
+## Row
+
+```{python}
+#| title: Release downloads
+if releases is not None and not releases.empty:
+    r = (releases.groupby(["tag", "published_at"]).downloads.sum().reset_index()
+         .sort_values("published_at").tail(15))
+    fig = px.bar(r, x="tag", y="downloads", color_discrete_sequence=[BLUE], labels={"tag": ""})
+    fig.update_layout(margin=dict(l=10, r=10, t=10, b=10))
+    fig
+else:
+    none_msg("release")
+```
+
+```{python}
+#| title: Repository traffic (needs push access)
+if traffic is not None and not traffic.empty:
+    fig = px.line(traffic, x="date", y="uniques", color="kind", line_dash="repo",
+                  labels={"uniques": "Unique visitors", "date": ""})
+    fig.update_layout(margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h", y=1.1))
+    fig
+else:
+    none_msg("traffic")
+```
+
+# Discord
+
+## Row {height=22%}
+
+```{python}
+#| content: valuebox
+#| title: "Members"
+dict(icon="people", color="primary",
+     value=int(dc_daily.sort_values("date").members.iloc[-1]) if dc_daily is not None else "–")
+```
+
+```{python}
+#| content: valuebox
+#| title: "Messages (last 30 days)"
+c30 = pd.Timestamp.now() - pd.Timedelta(days=30)
+dict(icon="chat", color="info",
+     value=int((dc_msgs.created_at >= c30).sum()) if dc_msgs is not None else "–")
+```
+
+```{python}
+#| content: valuebox
+#| title: "Active posters (last 30 days)"
+dict(icon="person-check", color="success",
+     value=dc_msgs.loc[dc_msgs.created_at >= c30, "author"].nunique() if dc_msgs is not None else "–")
+```
+
+```{python}
+#| content: valuebox
+#| title: "Joined / left (last 30 days)"
+if dc_members is not None:
+    v = f"+{int((dc_current.joined_at >= c30).sum())} / −{int((dc_members.left_seen >= c30).sum())}"
+else:
+    v = "–"
+dict(icon="arrow-left-right", color="secondary", value=v)
+```
+
+## Row
+
+```{python}
+#| title: Members over time
+#| footer: "Reconstructed = current members by join date (people who left are missing, so the past is slightly overstated). Daily count = exact, from our snapshots."
+if dc_members is not None or dc_daily is not None:
+    import plotly.graph_objects as go
+    fig = go.Figure()
+    if dc_members is not None and not dc_current.empty:
+        j = dc_current.joined_at.dropna().sort_values()
+        fig.add_scatter(x=j, y=list(range(1, len(j) + 1)), name="Reconstructed from join dates",
+                        line=dict(color=BLUE, shape="hv"))
+    if dc_daily is not None:
+        fig.add_scatter(x=dc_daily.date, y=dc_daily.members, name="Daily count", mode="lines+markers",
+                        line=dict(color=ORANGE))
+    fig.update_layout(margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h", y=1.1))
+    fig
+else:
+    none_msg("Discord")
+```
+
+```{python}
+#| title: New members per month
+if dc_members is not None and not dc_members.empty:
+    d = dc_members.assign(month=dc_members.joined_at.dt.to_period("M").dt.to_timestamp())
+    d = d.groupby("month").size().reset_index(name="joined")
+    fig = px.bar(d, x="month", y="joined", color_discrete_sequence=[BLUE], labels={"month": ""})
+    fig.update_layout(margin=dict(l=10, r=10, t=10, b=10))
+    fig
+else:
+    none_msg("Discord member")
+```
+
+```{python}
+#| title: Messages per week by channel
+if dc_msgs is not None and not dc_msgs.empty:
+    d = (dc_msgs.assign(week=dc_msgs.created_at.dt.to_period("W").dt.start_time)
+         .groupby(["week", "channel"]).size().reset_index(name="messages"))
+    fig = px.bar(d, x="week", y="messages", color="channel", labels={"week": ""})
+    fig.update_layout(margin=dict(l=10, r=10, t=10, b=10))
+    fig
+else:
+    none_msg("Discord message")
+```
+
+# Survey → activity
+
+```{python}
+#| include: false
+funnel = None
+if n_resp:
+    f = resp[["submission_id", "submitted_at", "role", "affiliation_norm", "github_handle", "discord_handle"]].copy()
+    if issues is not None:
+        a = issues.groupby("author").agg(issues_opened=("is_pr", lambda x: int((~x).sum())),
+                                          prs_opened=("is_pr", "sum"),
+                                          first_activity=("created_at", "min"),
+                                          last_activity=("created_at", "max"))
+        f = f.merge(a, left_on="github_handle", right_index=True, how="left")
+        after = issues.merge(f[["github_handle", "submitted_at"]], left_on="author", right_on="github_handle")
+        after = after[after.created_at >= after.submitted_at].groupby("author").size().rename("gh_items_after_signup")
+        f = f.merge(after, left_on="github_handle", right_index=True, how="left")
+    if stars is not None:
+        f["starred"] = f.github_handle.isin(set(stars.user))
+    if dc_members is not None:
+        # survey handle may be a username, display name or server nickname
+        names = pd.concat([dc_members[[c, "joined_at", "left_seen"]].rename(columns={c: "name"})
+                           for c in ("username", "global_name", "nick")]).dropna(subset=["name"])
+        names = names.sort_values("joined_at").drop_duplicates("name")
+        f = f.merge(names.rename(columns={"name": "discord_handle", "joined_at": "discord_joined",
+                                          "left_seen": "discord_left"}), on="discord_handle", how="left")
+        f["joined_after_signup"] = f.discord_joined >= f.submitted_at
+    if dc_msgs is not None:
+        m = dc_msgs.groupby("author").agg(discord_messages=("message_id", "count"),
+                                          discord_last=("created_at", "max"))
+        f = f.merge(m, left_on="discord_handle", right_index=True, how="left")
+    funnel = f
+
+def count(cond):
+    return int(cond.sum()) if funnel is not None else 0
+```
+
+## Row {height=22%}
+
+```{python}
+#| content: valuebox
+#| title: "Gave a GitHub handle"
+dict(icon="github", color="primary", value=count(funnel.github_handle.notna()) if funnel is not None else 0)
+```
+
+```{python}
+#| content: valuebox
+#| title: "…and opened an issue/PR after signing up"
+dict(icon="arrow-right-circle", color="success",
+     value=count(funnel.get("gh_items_after_signup", pd.Series(dtype=float)).fillna(0) > 0) if funnel is not None else 0)
+```
+
+```{python}
+#| content: valuebox
+#| title: "Gave a Discord handle"
+dict(icon="discord", color="primary", value=count(funnel.discord_handle.notna()) if funnel is not None else 0)
+```
+
+```{python}
+#| content: valuebox
+#| title: "…found on the server"
+dict(icon="person-check", color="info",
+     value=count(funnel.get("discord_joined", pd.Series(dtype="datetime64[ns]")).notna()) if funnel is not None else 0)
+```
+
+```{python}
+#| content: valuebox
+#| title: "…and posted on Discord"
+dict(icon="chat-heart", color="success",
+     value=count(funnel.get("discord_messages", pd.Series(dtype=float)).fillna(0) > 0) if funnel is not None else 0)
+```
+
+## Row
+
+```{python}
+#| title: Respondents with a GitHub or Discord handle
+if funnel is not None:
+    t = funnel[funnel.github_handle.notna() | funnel.discord_handle.notna()].drop(columns=["submission_id"])
+    t["submitted_at"] = t.submitted_at.dt.date
+    show(t.sort_values("submitted_at", ascending=False), paging=True, pageLength=20,
+         searching=True, scrollX=True)
+else:
+    none_msg("survey")
+```

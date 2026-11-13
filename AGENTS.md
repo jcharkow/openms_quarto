@@ -1,0 +1,85 @@
+# AGENTS.md
+
+Guidance for AI coding agents (Claude Code, Codex, etc.) working in this repo. Human docs: README.md.
+
+## What this is
+
+A private, self-hosted dashboard for the OpenMS community: Tally sign-up survey + GitHub + Discord.
+Nightly `refresh.sh`: `ingest/*.py` fetch APIs → `data/*.parquet` → Quarto renders
+`dashboard/index.qmd` to static HTML → rsync to a web folder behind a login.
+
+Why Quarto: chosen over Evidence.dev (its OSS framework was deprecated for the hosted Evidence
+Studio in 2026). Keep it lightweight: no database, no app server, no SaaS in the data path.
+
+## Layout
+
+| Path | Role |
+|---|---|
+| `ingest/common.py` | Survey column names, cleaning helpers, `tidy_survey`, `read_table`/`write_table`, `DATA_DIR` |
+| `ingest/tally.py` | Tally API (or `--csv`) → `survey_respondents`, `survey_choices` |
+| `ingest/github.py` | → `github_daily`, `github_stars`, `github_issues`, `github_contributors`, `github_releases`, `github_traffic` |
+| `ingest/discord_snapshot.py` | → `discord_daily`, `discord_members`, `discord_messages` |
+| `dashboard/index.qmd` | The whole dashboard (one file, `#` headings = pages) |
+| `scripts/make_fake_data.py` | Fake data for every table, for offline testing |
+| `scripts/check_render.py` | Prints value boxes / placeholders of a rendered page; fails on tracebacks |
+| `openms_survey_report.py` | Legacy PDF report from a CSV export; imports `ingest/common.py` |
+
+Ingest modules run as `python -m ingest.<name>` from the repo root.
+
+## Hard rules
+
+- **Privacy.** Names and emails never leave `ingest/tally.py`: emails become `email_hash`, names
+  become `has_name`. Do not add raw PII columns to any table. No Discord message content. Handles
+  (GitHub/Discord) are kept on purpose for matching — the site is private.
+- **No third-party data processors** (Google Sheets, hosted BI, etc.) for survey data without
+  asking the user first.
+- **Never commit** `.env`, `data/`, CSV exports, PDFs, or rendered output (see `.gitignore`).
+- **Never run ingest or `make_fake_data.py` against the real `data/` while testing.** Set
+  `OPENMS_DATA_DIR` to a scratch directory. `make_fake_data.py` refuses real `data/` unless `--force`.
+- **History is irreplaceable.** `discord_daily`, `discord_members` (left_seen), `github_daily` and
+  `github_traffic` accumulate over runs and cannot be re-fetched. Ingest changes must merge with
+  existing tables (`upsert` pattern), never drop old rows.
+
+## Conventions
+
+- Tables are parquet, written atomically via `write_table(df, name)`; read with `read_table(name)`,
+  which returns `None` if the table doesn't exist yet.
+- Timestamps: naive UTC (`pd.to_datetime(..., utc=True).tz_localize(None)`).
+- Usernames/handles: lower-cased. Survey handles go through `clean_github_handle` /
+  `clean_discord_handle`.
+- Every ingest script fails independently; `refresh.sh` keeps going and exits 1 if any failed.
+  Optional API parts (no token, missing permission) print a hint and skip instead of crashing.
+- Dashboard cells must tolerate any table being `None` or empty: use `none_msg("...")`.
+  Value boxes: a cell with `#| content: valuebox`, `#| title: ...`, ending in
+  `dict(icon=<bootstrap icon>, color=..., value=...)`. Charts: Plotly Express with `BLUE`/`ORANGE`,
+  `margin=dict(l=10, r=10, t=10, b=10)`. Tables: `itables.show(...)`.
+- Target pandas ≥ 2.1 including pandas 3 (string dtype default, copy-on-write).
+
+## Testing
+
+No test suite; verify by rendering with fake data:
+
+```bash
+export OPENMS_DATA_DIR=$(mktemp -d)
+python scripts/make_fake_data.py
+(cd dashboard && quarto render index.qmd)
+python scripts/check_render.py dashboard/index.html
+rm -rf dashboard/index.html dashboard/index_files dashboard/.quarto
+```
+
+For ingest changes, mock the API client (`Discord.get` / `GitHub.get`) and run `main()` twice
+against a scratch `OPENMS_DATA_DIR` to check incremental behaviour and de-duplication.
+See `.claude/skills/` for step-by-step workflows.
+
+## Known gotchas
+
+- GitHub `/stargazers` requires a token (401 anonymously); traffic needs push/admin access.
+  Anonymous rate limit is 60 req/h — test against small repos (e.g. `OpenMS/umetaflow`).
+- Discord member list needs the bot's **Server Members Intent**; without it the API returns 403.
+  Discord IDs are snowflakes: page with `after=max(id)`, not list order.
+- Tally API answer shapes vary by question type (labels, option ids, objects); `tally._label`
+  handles the known cases. Untitled checkbox questions become `Untitled checkboxes field (<option>)`
+  to match the CSV export.
+- Plotly rejects a Python `range` for `y`: use a list.
+- `refresh.sh` uses `realpath -s` so a venv's python symlink isn't resolved to system python.
+- Quarto needs `jupyter` in the same Python (`QUARTO_PYTHON`).

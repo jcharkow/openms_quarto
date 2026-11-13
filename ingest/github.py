@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+"""
+Pull GitHub metrics into parquet.
+
+    python -m ingest.github      # GITHUB_TOKEN (recommended), GITHUB_REPOS="OpenMS/OpenMS,OpenMS/other"
+
+Tables (data/*.parquet):
+  github_daily         one row per repo per day: stars, forks, watchers, open issues (history builds up)
+  github_stars         every stargazer with timestamp (full star history, rebuilt each run)
+  github_issues        issues + PRs (incremental via `since`)
+  github_contributors  commit counts per contributor
+  github_releases      release assets and download counts
+  github_traffic       views / clones per day (needs push access; GitHub only keeps 14 days,
+                       so this table keeps everything it has seen)
+"""
+from __future__ import annotations
+
+import os
+import time
+from datetime import datetime, timezone
+
+import pandas as pd
+import requests
+
+from ingest.common import read_table, write_table
+
+API = "https://api.github.com"
+
+
+class GitHub:
+    def __init__(self, token: str | None):
+        self.s = requests.Session()
+        self.s.headers.update({"Accept": "application/vnd.github+json",
+                               "X-GitHub-Api-Version": "2022-11-28"})
+        if token:
+            self.s.headers["Authorization"] = f"Bearer {token}"
+
+    def get(self, url, params=None, accept=None, optional=False):
+        headers = {"Accept": accept} if accept else None
+        while True:
+            r = self.s.get(url if url.startswith("http") else API + url,
+                           params=params, headers=headers, timeout=60)
+            if r.status_code in (403, 429) and r.headers.get("X-RateLimit-Remaining") == "0":
+                wait = max(5, int(r.headers.get("X-RateLimit-Reset", time.time() + 60)) - int(time.time()))
+                print(f"  rate limited, sleeping {wait}s")
+                time.sleep(min(wait, 3600))
+                continue
+            if optional and r.status_code in (401, 403, 404):
+                return None  # e.g. no token / no push access
+            if r.status_code == 202:  # stats being computed by GitHub
+                time.sleep(3)
+                continue
+            r.raise_for_status()
+            return r
+
+    def paginate(self, url, params=None, accept=None, optional=False):
+        params = {"per_page": 100, **(params or {})}
+        while url:
+            r = self.get(url, params, accept, optional)
+            if r is None:
+                print(f"  skipped {url.split('?')[0]} (needs a GITHUB_TOKEN with access)")
+                return
+            yield from r.json()
+            url, params = r.links.get("next", {}).get("url"), None
+
+
+def ts(v):
+    return pd.to_datetime(v, utc=True).tz_localize(None) if v else pd.NaT
+
+
+def upsert(name: str, new: pd.DataFrame, keys: list[str]):
+    old = read_table(name)
+    if old is not None and not old.empty:
+        new = pd.concat([old, new]).drop_duplicates(subset=keys, keep="last")
+    write_table(new.reset_index(drop=True), name)
+
+
+def main():
+    gh = GitHub(os.environ.get("GITHUB_TOKEN"))
+    repos = [r.strip() for r in os.environ.get("GITHUB_REPOS", "OpenMS/OpenMS").split(",") if r.strip()]
+    today = datetime.now(timezone.utc).date()
+    print(f"GitHub: {', '.join(repos)}")
+
+    daily, stars, contribs, releases, traffic, issues = [], [], [], [], [], []
+    old_issues = read_table("github_issues")
+
+    for repo in repos:
+        info = gh.get(f"/repos/{repo}").json()
+        daily.append({"date": pd.Timestamp(today), "repo": repo, "stars": info["stargazers_count"],
+                      "forks": info["forks_count"], "watchers": info.get("subscribers_count"),
+                      "open_issues_and_prs": info["open_issues_count"]})
+
+        for s in gh.paginate(f"/repos/{repo}/stargazers", accept="application/vnd.github.star+json",
+                               optional=True):
+            if s.get("user"):
+                stars.append({"repo": repo, "user": s["user"]["login"].lower(), "starred_at": ts(s["starred_at"])})
+
+        for c in gh.paginate(f"/repos/{repo}/contributors"):
+            contribs.append({"repo": repo, "login": c["login"].lower(), "contributions": c["contributions"],
+                             "is_bot": c.get("type") == "Bot"})
+
+        for rel in gh.paginate(f"/repos/{repo}/releases"):
+            for a in rel.get("assets") or [{"name": None, "download_count": 0}]:
+                releases.append({"repo": repo, "tag": rel["tag_name"], "published_at": ts(rel.get("published_at")),
+                                 "prerelease": rel["prerelease"], "asset": a["name"],
+                                 "downloads": a["download_count"]})
+
+        # Issues + PRs, incremental: only those updated since the last run
+        since = None
+        if old_issues is not None and not old_issues.empty:
+            mine = old_issues[old_issues.repo == repo]
+            if not mine.empty:
+                since = (mine.updated_at.max() - pd.Timedelta(days=1)).isoformat() + "Z"
+        params = {"state": "all", "sort": "updated", "direction": "asc", **({"since": since} if since else {})}
+        for i in gh.paginate(f"/repos/{repo}/issues", params):
+            pr = i.get("pull_request")
+            issues.append({"repo": repo, "number": i["number"], "is_pr": pr is not None,
+                           "author": (i.get("user") or {}).get("login", "").lower() or None,
+                           "author_association": i.get("author_association"),
+                           "is_bot": (i.get("user") or {}).get("type") == "Bot",
+                           "state": i["state"], "title": i["title"],
+                           "created_at": ts(i["created_at"]), "closed_at": ts(i.get("closed_at")),
+                           "merged_at": ts(pr.get("merged_at")) if pr else pd.NaT,
+                           "updated_at": ts(i["updated_at"]), "comments": i.get("comments", 0)})
+
+        for kind in ("views", "clones"):
+            r = gh.get(f"/repos/{repo}/traffic/{kind}", optional=True)
+            if r is None:
+                print(f"  {repo}: no push access, skipping traffic/{kind}")
+                continue
+            for d in r.json().get(kind, []):
+                traffic.append({"repo": repo, "date": ts(d["timestamp"]), "kind": kind,
+                                "count": d["count"], "uniques": d["uniques"]})
+
+    upsert("github_daily", pd.DataFrame(daily), ["date", "repo"])
+    if stars:
+        write_table(pd.DataFrame(stars), "github_stars")
+    write_table(pd.DataFrame(contribs), "github_contributors")
+    write_table(pd.DataFrame(releases), "github_releases")
+    if issues:
+        upsert("github_issues", pd.DataFrame(issues), ["repo", "number"])
+    if traffic:
+        upsert("github_traffic", pd.DataFrame(traffic), ["repo", "date", "kind"])
+
+
+if __name__ == "__main__":
+    main()

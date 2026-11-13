@@ -1,0 +1,10 @@
+.env
+.venv/
+data/
+*.csv
+*.pdf
+__pycache__/
+dashboard/_site/
+dashboard/.quarto/
+dashboard/index_files/
+dashboard/index.html
