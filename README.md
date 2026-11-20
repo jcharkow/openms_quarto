@@ -7,7 +7,8 @@ copied to a folder served by nginx/Caddy behind a login.
 ```
 ingest/common.py            shared cleaning helpers + survey column names
 ingest/tally.py             Tally API (or CSV export) -> survey_respondents, survey_choices
-ingest/github.py            stars, issues/PRs, contributors, releases, traffic, daily counts
+ingest/github.py            stars, issues/PRs, commits, discussions, contributors, releases, traffic, daily counts
+ingest/packages.py          monthly Bioconda + PyPI downloads (public data)
 ingest/discord_snapshot.py  member list with join dates, daily member counts, message counts per channel/author
 dashboard/index.qmd         the Quarto dashboard (pages: Overview, Survey, GitHub, Discord, Survey → activity)
 refresh.sh                  fetch everything, render, deploy

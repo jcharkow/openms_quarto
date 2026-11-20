@@ -6,7 +6,7 @@ cd "$(dirname "$0")"
 PY=$(realpath -s "${PYTHON:-.venv/bin/python}")
 
 status=0
-for mod in ingest.tally ingest.github ingest.discord_snapshot; do
+for mod in ingest.tally ingest.github ingest.packages ingest.discord_snapshot; do
   "$PY" -m "$mod" || { echo "!! $mod failed" >&2; status=1; }
 done
 

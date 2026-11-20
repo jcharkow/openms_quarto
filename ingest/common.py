@@ -208,6 +208,43 @@ def read_table(name: str) -> pd.DataFrame | None:
     return pd.read_parquet(path) if path.exists() else None
 
 
+# --------------------------------------------------------------------------- #
+# Funder KPIs: service packages and reporting periods
+# --------------------------------------------------------------------------- #
+# Service packages as used in the de.NBI reports (see FUNDER_METRICS.md)
+SERVICES = {"core": "Core + TOPP", "python": "Python libraries",
+            "webapps": "WebApps", "workflows": "Workflows"}
+
+
+def parse_mapping(spec: str) -> dict[str, list[str]]:
+    """
+    'OpenMS/OpenMS=core|python, bigbio/quantms=workflows, OpenMS/other'
+      -> {'OpenMS/OpenMS': ['core', 'python'], 'bigbio/quantms': ['workflows'], 'OpenMS/other': []}
+    Used for GITHUB_REPOS, BIOCONDA_PACKAGES and PYPI_PACKAGES.
+    """
+    out: dict[str, list[str]] = {}
+    for item in (spec or "").split(","):
+        item = item.strip()
+        if not item:
+            continue
+        name, _, svcs = item.partition("=")
+        services = [s.strip().lower() for s in svcs.split("|") if s.strip()]
+        unknown = set(services) - set(SERVICES)
+        if unknown:
+            raise SystemExit(f"Unknown service {sorted(unknown)} for {name!r}; use one of {list(SERVICES)}")
+        out[name.strip()] = services
+    return out
+
+
+def kpi_periods(today: pd.Timestamp | None = None) -> list[tuple[str, pd.Timestamp, pd.Timestamp]]:
+    """The last three full calendar years plus the current year to date: [(label, start, end_exclusive)]."""
+    today = pd.Timestamp(today or pd.Timestamp.now()).normalize()
+    y = today.year
+    periods = [(str(yr), pd.Timestamp(yr, 1, 1), pd.Timestamp(yr + 1, 1, 1)) for yr in (y - 3, y - 2, y - 1)]
+    periods.append((f"{y} YTD", pd.Timestamp(y, 1, 1), today + pd.Timedelta(days=1)))
+    return periods
+
+
 def require_env(name: str) -> str:
     v = os.environ.get(name)
     if not v:

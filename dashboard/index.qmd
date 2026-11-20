@@ -21,7 +21,7 @@ import plotly.io as pio
 from IPython.display import Markdown, display
 from itables import init_notebook_mode, show
 
-from ingest.common import read_table
+from ingest.common import SERVICES, kpi_periods, read_table
 
 pio.templates.default = "plotly_white"
 init_notebook_mode(all_interactive=False, connected=False)
@@ -61,6 +61,13 @@ traffic = read_table("github_traffic")
 dc_daily = read_table("discord_daily")
 dc_msgs = read_table("discord_messages")
 dc_members = read_table("discord_members")
+
+commits = read_table("github_commits")
+discussions = read_table("github_discussions")
+repo_services = read_table("github_repo_services")
+pkg_dl = read_table("package_downloads")
+pkg_services = read_table("package_services")
+issues_all = issues  # funder KPIs count every opener, bots included (see FUNDER_METRICS.md)
 
 n_resp = len(resp) if resp is not None else 0
 if issues is not None:
@@ -304,6 +311,156 @@ if traffic is not None and not traffic.empty:
     fig
 else:
     none_msg("traffic")
+```
+
+# Funder KPIs
+
+```{python}
+#| include: false
+PERIODS = kpi_periods()
+PLABELS = [p[0] for p in PERIODS]
+
+def in_periods(dates):
+    """Number of non-null timestamps falling in each reporting period."""
+    d = pd.Series(dates).dropna()
+    return [int(((d >= a) & (d < b)).sum()) for _, a, b in PERIODS]
+
+def uniq_in_periods(df, date_col, key):
+    return [int(df.loc[(df[date_col] >= a) & (df[date_col] < b), key].nunique()) for _, a, b in PERIODS]
+
+def repo_metrics(repos):
+    """Activity metrics summed over `repos` (each repo counted once)."""
+    rows = {}
+    if issues_all is not None:
+        i = issues_all[issues_all.repo.isin(repos)]
+        rows["Merged pull requests"] = in_periods(i.loc[i.is_pr, "merged_at"])
+        rows["Pull requests opened"] = in_periods(i.loc[i.is_pr, "created_at"])
+        rows["Issues opened"] = in_periods(i.loc[~i.is_pr, "created_at"])
+        rows["Issues closed"] = in_periods(i.loc[~i.is_pr, "closed_at"])
+        disc = discussions[discussions.repo.isin(repos)].created_at if discussions is not None else []
+        rows["Support requests (issues + discussions opened)"] = [
+            a + b for a, b in zip(rows["Issues opened"], in_periods(disc))]
+    if discussions is not None:
+        rows["Discussions opened"] = in_periods(discussions[discussions.repo.isin(repos)].created_at)
+    if commits is not None:
+        # forks / template syncs share history: count each sha once, and show what is not shared
+        c = commits[commits.repo.isin(repos)].drop_duplicates("sha")
+        rows["Commits (default branch)"] = in_periods(c.authored_at)
+        rows["Commits not shared with another tracked repo"] = in_periods(
+            c.loc[~c.sha.isin(SHARED_SHAS), "authored_at"])
+        rows["Non-merge commits"] = in_periods(c.loc[~c.is_merge, "authored_at"])
+        h = c[~c.is_bot & c.author.notna()]
+        rows["Human commit authors"] = uniq_in_periods(h, "authored_at", "author")
+    if releases is not None:
+        r = releases[releases.repo.isin(repos)].drop_duplicates(["repo", "tag"])
+        rows["Releases published (incl. prereleases)"] = in_periods(r.published_at)
+    if stars is not None:
+        rows["Stars added (still present)"] = in_periods(stars[stars.repo.isin(repos)].starred_at)
+    return rows
+
+def downloads(channel, package):
+    """Downloads per period; '–' where no month of the period has been collected."""
+    d = pkg_dl[(pkg_dl.channel == channel) & (pkg_dl.package == package)]
+    out = []
+    for _, a, b in PERIODS:
+        m = d[(d.month >= a) & (d.month < b)]
+        out.append(int(m.downloads.sum()) if len(m) else "–")
+    return out
+
+def kpi_table(rows, first_cols):
+    df = pd.DataFrame([{**first_cols(k), **dict(zip(PLABELS, v))} for k, v in rows])
+    return df
+
+SHARED_SHAS = (set(commits.loc[commits.duplicated("sha", keep=False), "sha"])
+               if commits is not None else set())
+ORDER = ["Support requests (issues + discussions opened)", "Issues closed", "Merged pull requests",
+         "Commits (default branch)", "Commits not shared with another tracked repo", "Human commit authors", "Releases published (incl. prereleases)"]
+all_repos = sorted((set(repo_services.repo) if repo_services is not None else set())
+                   | (set(issues_all.repo) if issues_all is not None else set()))
+```
+
+## Row
+
+### Column {.tabset}
+
+```{python}
+#| title: By service package
+rows = []
+for key, label in SERVICES.items():
+    repos = repo_services.loc[repo_services.service == key, "repo"].tolist() if repo_services is not None else []
+    if repos:
+        m = repo_metrics(repos)
+        rows += [((label, k), m[k]) for k in ORDER if k in m]
+    if pkg_dl is not None and pkg_services is not None:
+        for _, r in pkg_services[pkg_services.service == key].iterrows():
+            ch = {"bioconda": "Bioconda", "pypi": "PyPI"}.get(r.channel, r.channel)
+            rows.append(((label, f"{ch} {r.package} downloads"), downloads(r.channel, r.package)))
+if all_repos:
+    m = repo_metrics(all_repos)
+    rows += [(("All tracked repos", k), m[k]) for k in ORDER if k in m]
+if rows:
+    df = kpi_table(rows, lambda k: {"Service package": k[0], "KPI": k[1]})
+    show(df, paging=False, ordering=False,
+         columnDefs=[{"className": "dt-right", "targets": list(range(2, 2 + len(PLABELS)))}])
+else:
+    none_msg("funder KPI (run ingest.github and ingest.packages)")
+```
+
+```{python}
+#| title: By repository
+if all_repos:
+    rows = [((repo, k), v) for repo in all_repos for k, v in repo_metrics([repo]).items()]
+    df = kpi_table(rows, lambda k: {"Repository": k[0], "Metric": k[1]})
+    show(df, pageLength=25, lengthMenu=[25, 100, 500])
+else:
+    none_msg("GitHub")
+```
+
+```{python}
+#| title: Package downloads
+if pkg_dl is not None and not pkg_dl.empty:
+    pairs = pkg_dl[["channel", "package"]].drop_duplicates().sort_values(["channel", "package"])
+    rows = [((r.channel, r.package), downloads(r.channel, r.package)) for r in pairs.itertuples()]
+    df = kpi_table(rows, lambda k: {"Channel": k[0], "Package": k[1]})
+    show(df, paging=False, ordering=False)
+else:
+    none_msg("package download")
+```
+
+## Row {height=40%}
+
+```{python}
+#| title: Monthly package downloads
+if pkg_dl is not None and not pkg_dl.empty:
+    d = pkg_dl.assign(series=pkg_dl.channel + ": " + pkg_dl.package)
+    fig = px.line(d, x="month", y="downloads", color="series", log_y=True,
+                  labels={"month": "", "downloads": "Downloads (log)", "series": ""})
+    fig.update_layout(margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h", y=1.15))
+    fig
+else:
+    none_msg("package download")
+```
+
+```{python}
+#| title: How these are counted
+Markdown(f"""
+Columns are the last three full calendar years plus **{PLABELS[-1]}** (to {pd.Timestamp.now():%d %b %Y});
+they move forward automatically each January.
+
+- **Support requests**: every issue and discussion opened, any author (bots included); PRs excluded.
+- **Issues closed** counts the current closure date, including stale/duplicate closures.
+- **Commits** follow the current default branch by author date. Template syncs and forks pull
+  other repos' history in (e.g. umetaflow contains streamlit-template commits), so each commit is
+  counted once across repos, and "not shared" shows commits found in no other tracked repo.
+  Service rows count each repo once, but one repo can serve several packages
+  (e.g. OpenMS/OpenMS for Core and Python), so service rows must not be summed either.
+- **Downloads** are download events (CI and dependencies included), not users. Bioconda months appear
+  once Anaconda publishes them, so the YTD column lags by a month; “–” means no month collected.
+- Repo-wide activity includes the wider community, not only funded work.
+
+Not automated yet (citations, tool/workflow executions, telemetry, WebApp visits, training): see
+`FUNDER_METRICS.md` in the repository.
+""")
 ```
 
 # Discord

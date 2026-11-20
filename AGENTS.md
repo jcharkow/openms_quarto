@@ -17,7 +17,9 @@ Studio in 2026). Keep it lightweight: no database, no app server, no SaaS in the
 |---|---|
 | `ingest/common.py` | Survey column names, cleaning helpers, `tidy_survey`, `read_table`/`write_table`, `DATA_DIR` |
 | `ingest/tally.py` | Tally API (or `--csv`) → `survey_respondents`, `survey_choices` |
-| `ingest/github.py` | → `github_daily`, `github_stars`, `github_issues`, `github_contributors`, `github_releases`, `github_traffic` |
+| `ingest/github.py` | → `github_daily`, `github_stars`, `github_issues`, `github_contributors`, `github_releases`, `github_traffic`, `github_commits`, `github_discussions`, `github_repo_services` |
+| `ingest/packages.py` | → `package_downloads`, `package_services` (Bioconda monthly parquet + ClickPy/PyPI, public) |
+| `FUNDER_METRICS.md` | Which de.NBI report KPIs are automated on the Funder KPIs page and which are still missing |
 | `ingest/discord_snapshot.py` | → `discord_daily`, `discord_members`, `discord_messages` |
 | `dashboard/index.qmd` | The whole dashboard (one file, `#` headings = pages) |
 | `scripts/make_fake_data.py` | Fake data for every table, for offline testing |
@@ -83,6 +85,12 @@ See `.claude/skills/` for step-by-step workflows.
 
 ## Known gotchas
 
+- Funder KPIs: periods come from `kpi_periods()` (last 3 full calendar years + current YTD); never
+  hard-code years. Funder counts use `issues_all` (bots included), not the bot-filtered `issues`.
+  Repo/package → service mapping is in `GITHUB_REPOS` / `BIOCONDA_PACKAGES` / `PYPI_PACKAGES`
+  (`name=core|python`, parsed by `parse_mapping`).
+- Bioconda monthly files are ~10 MB each; `ingest.packages` skips months it already has. Don't
+  backfill many months in tests.
 - GitHub `/stargazers` requires a token (401 anonymously); traffic needs push/admin access.
   Anonymous rate limit is 60 req/h — test against small repos (e.g. `OpenMS/umetaflow`).
 - Discord member list needs the bot's **Server Members Intent**; without it the API returns 403.

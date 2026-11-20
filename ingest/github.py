@@ -2,7 +2,11 @@
 """
 Pull GitHub metrics into parquet.
 
-    python -m ingest.github      # GITHUB_TOKEN (recommended), GITHUB_REPOS="OpenMS/OpenMS,OpenMS/other"
+    python -m ingest.github      # GITHUB_TOKEN (recommended), GITHUB_REPOS (see below)
+
+GITHUB_REPOS is a comma-separated list; each repo can name the service packages it counts towards
+for the funder KPIs (core, python, webapps, workflows), e.g.
+    GITHUB_REPOS="OpenMS/OpenMS=core|python, OpenMS/pyopenms_viz=python, bigbio/quantms=workflows"
 
 Tables (data/*.parquet):
   github_daily         one row per repo per day: stars, forks, watchers, open issues (history builds up)
@@ -12,6 +16,10 @@ Tables (data/*.parquet):
   github_releases      release assets and download counts
   github_traffic       views / clones per day (needs push access; GitHub only keeps 14 days,
                        so this table keeps everything it has seen)
+  github_commits       default-branch commits (incremental; backfill from GITHUB_COMMITS_SINCE,
+                       default 1 January three years ago)
+  github_discussions   discussions (GraphQL, needs a token)
+  github_repo_services repo -> service package mapping from GITHUB_REPOS
 """
 from __future__ import annotations
 
@@ -22,7 +30,7 @@ from datetime import datetime, timezone
 import pandas as pd
 import requests
 
-from ingest.common import read_table, write_table
+from ingest.common import parse_mapping, read_table, write_table
 
 API = "https://api.github.com"
 
@@ -63,6 +71,42 @@ class GitHub:
             yield from r.json()
             url, params = r.links.get("next", {}).get("url"), None
 
+    def graphql(self, query, variables):
+        r = self.s.post(API + "/graphql", json={"query": query, "variables": variables}, timeout=60)
+        r.raise_for_status()
+        body = r.json()
+        if body.get("errors"):
+            raise RuntimeError(body["errors"])
+        return body["data"]
+
+    def discussions(self, repo):
+        """All discussions of a repo, or None without a token (GraphQL needs auth)."""
+        if "Authorization" not in self.s.headers:
+            return None
+        owner, name = repo.split("/", 1)
+        out, cursor = [], None
+        while True:
+            d = self.graphql(DISCUSSIONS_QUERY, {"owner": owner, "name": name, "cursor": cursor})["repository"]
+            if not d or not d["hasDiscussionsEnabled"]:
+                return out
+            page = d["discussions"]
+            out += page["nodes"]
+            if not page["pageInfo"]["hasNextPage"]:
+                return out
+            cursor = page["pageInfo"]["endCursor"]
+
+
+DISCUSSIONS_QUERY = """
+query($owner: String!, $name: String!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    hasDiscussionsEnabled
+    discussions(first: 100, after: $cursor, orderBy: {field: CREATED_AT, direction: ASC}) {
+      pageInfo { hasNextPage endCursor }
+      nodes { number createdAt author { login __typename } category { name } answer { createdAt } }
+    }
+  }
+}"""
+
 
 def ts(v):
     return pd.to_datetime(v, utc=True).tz_localize(None) if v else pd.NaT
@@ -77,12 +121,15 @@ def upsert(name: str, new: pd.DataFrame, keys: list[str]):
 
 def main():
     gh = GitHub(os.environ.get("GITHUB_TOKEN"))
-    repos = [r.strip() for r in os.environ.get("GITHUB_REPOS", "OpenMS/OpenMS").split(",") if r.strip()]
+    mapping = parse_mapping(os.environ.get("GITHUB_REPOS", "OpenMS/OpenMS=core|python"))
+    repos = list(mapping)
     today = datetime.now(timezone.utc).date()
+    commits_since = pd.Timestamp(os.environ.get("GITHUB_COMMITS_SINCE") or f"{today.year - 3}-01-01")
     print(f"GitHub: {', '.join(repos)}")
 
-    daily, stars, contribs, releases, traffic, issues = [], [], [], [], [], []
+    daily, stars, contribs, releases, traffic, issues, commits, discussions = [], [], [], [], [], [], [], []
     old_issues = read_table("github_issues")
+    old_commits = read_table("github_commits")
 
     for repo in repos:
         info = gh.get(f"/repos/{repo}").json()
@@ -123,6 +170,32 @@ def main():
                            "merged_at": ts(pr.get("merged_at")) if pr else pd.NaT,
                            "updated_at": ts(i["updated_at"]), "comments": i.get("comments", 0)})
 
+        # Default-branch commits, incremental (one day overlap; de-duplicated by sha)
+        since = commits_since
+        if old_commits is not None and not old_commits.empty:
+            mine = old_commits[old_commits.repo == repo]
+            if not mine.empty:
+                since = max(since, mine.committed_at.max() - pd.Timedelta(days=1))
+        for c in gh.paginate(f"/repos/{repo}/commits", {"since": since.isoformat() + "Z"}):
+            author = c.get("author") or {}
+            login = (author.get("login") or "").lower() or None
+            commits.append({"repo": repo, "sha": c["sha"], "author": login,
+                            "is_bot": author.get("type") == "Bot" or bool(login and login.endswith("[bot]")),
+                            "authored_at": ts(c["commit"]["author"]["date"]),
+                            "committed_at": ts(c["commit"]["committer"]["date"]),
+                            "is_merge": len(c.get("parents") or []) > 1})
+
+        disc = gh.discussions(repo)
+        if disc is None:
+            print(f"  {repo}: no token, skipping discussions")
+        for d in disc or []:
+            author = d.get("author") or {}
+            discussions.append({"repo": repo, "number": d["number"], "created_at": ts(d["createdAt"]),
+                                "author": (author.get("login") or "").lower() or None,
+                                "is_bot": author.get("__typename") == "Bot",
+                                "category": (d.get("category") or {}).get("name"),
+                                "answered_at": ts((d.get("answer") or {}).get("createdAt"))})
+
         for kind in ("views", "clones"):
             r = gh.get(f"/repos/{repo}/traffic/{kind}", optional=True)
             if r is None:
@@ -141,6 +214,12 @@ def main():
         upsert("github_issues", pd.DataFrame(issues), ["repo", "number"])
     if traffic:
         upsert("github_traffic", pd.DataFrame(traffic), ["repo", "date", "kind"])
+    if commits:
+        upsert("github_commits", pd.DataFrame(commits), ["repo", "sha"])
+    if discussions:
+        upsert("github_discussions", pd.DataFrame(discussions), ["repo", "number"])
+    write_table(pd.DataFrame([{"repo": r, "service": s} for r, svcs in mapping.items() for s in svcs],
+                             columns=["repo", "service"]), "github_repo_services")
 
 
 if __name__ == "__main__":

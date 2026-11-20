@@ -16,6 +16,11 @@ class FakeGitHub(g.GitHub):
     def __init__(self, issues):
         self.issues = issues
         self.since = []
+        self.commits = [commit("a", "2026-01-05T00:00:00Z"), commit("b", "2026-01-06T00:00:00Z", merge=True)]
+
+    def discussions(self, repo):
+        return [{"number": 7, "createdAt": "2026-01-04T00:00:00Z", "author": {"login": "U", "__typename": "User"},
+                 "category": {"name": "Q&A"}, "answer": None}]
 
     def get(self, url, params=None, accept=None, optional=False):
         if "/traffic/" in url or url.endswith("/stargazers"):
@@ -23,9 +28,17 @@ class FakeGitHub(g.GitHub):
         if url.endswith("/issues"):
             self.since.append((params or {}).get("since"))
             return Resp(self.issues)
+        if url.endswith("/commits"):
+            return Resp(self.commits)
         if url.endswith("/repos/o/r"):
             return Resp({"stargazers_count": 5, "forks_count": 1, "subscribers_count": 2, "open_issues_count": 3})
         return Resp([])
+
+
+def commit(sha, date, merge=False, login="Dev"):
+    return {"sha": sha, "author": {"login": login, "type": "User"},
+            "commit": {"author": {"date": date}, "committer": {"date": date}},
+            "parents": [{}, {}] if merge else [{}]}
 
 
 def issue(n, updated):
@@ -49,3 +62,17 @@ def test_issues_incremental_and_stars_optional(data_dir, monkeypatch):
     assert sorted(iss.number) == [1, 2, 3]              # merged, not replaced
     assert iss.set_index("number").loc[2, "updated_at"] == pd.Timestamp("2026-02-01")
     assert fake.since[0] is None and fake.since[1].startswith("2026-01-02")
+
+
+def test_commits_discussions_and_services(data_dir, monkeypatch):
+    monkeypatch.setenv("GITHUB_REPOS", "o/r=core|python")
+    fake = FakeGitHub([])
+    monkeypatch.setattr(g, "GitHub", lambda token: fake)
+    g.main()
+    fake.commits = [commit("b", "2026-01-06T00:00:00Z", merge=True), commit("c", "2026-02-01T00:00:00Z")]
+    g.main()
+    c = read_table("github_commits")
+    assert sorted(c.sha) == ["a", "b", "c"] and c.is_merge.sum() == 1 and set(c.author) == {"dev"}
+    assert read_table("github_discussions").category.tolist() == ["Q&A"]
+    svc = read_table("github_repo_services")
+    assert sorted(svc.service) == ["core", "python"]

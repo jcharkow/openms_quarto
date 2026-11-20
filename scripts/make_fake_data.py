@@ -81,6 +81,29 @@ write_table(pd.concat([pd.DataFrame({"repo": repo, "date": days, "kind": k,
                                      "count": rng.integers(50, 300, 14), "uniques": rng.integers(10, 80, 14)})
                        for k in ("views", "clones")]), "github_traffic")
 
+# --- Funder KPIs: commits, discussions, service mapping, package downloads ----
+write_table(pd.DataFrame({"repo": [repo, repo, "OpenMS/pyopenms_viz", "bigbio/quantms"],
+                          "service": ["core", "python", "python", "workflows"]}), "github_repo_services")
+n = 2000
+c_repo = rng.choice([repo, repo, repo, "OpenMS/pyopenms_viz", "bigbio/quantms"], n)
+c_at = now - pd.to_timedelta(rng.integers(0, 1400, n), unit="D")
+write_table(pd.DataFrame({"repo": c_repo, "sha": [f"{i:040x}" for i in range(n)],
+                          "author": rng.choice(authors + [None, "dependabot[bot]"], n),
+                          "is_bot": False, "authored_at": c_at, "committed_at": c_at,
+                          "is_merge": rng.random(n) < .2}).assign(
+                              is_bot=lambda d: d.author.fillna("").str.endswith("[bot]")), "github_commits")
+write_table(pd.DataFrame({"repo": rng.choice([repo, "bigbio/quantms"], 40), "number": range(1, 41),
+                          "created_at": now - pd.to_timedelta(rng.integers(0, 1400, 40), unit="D"),
+                          "author": rng.choice(authors, 40), "is_bot": False, "category": "Q&A",
+                          "answered_at": pd.NaT}), "github_discussions")
+months = pd.date_range(f"{now.year - 3}-01-01", now - pd.offsets.MonthBegin(1), freq="MS")
+pkgs = [("bioconda", "libopenms", "core"), ("bioconda", "openms", "core"), ("bioconda", "pyopenms", "python"),
+        ("pypi", "pyopenms", "python"), ("pypi", "pyopenms-viz", "python")]
+write_table(pd.concat([pd.DataFrame({"channel": ch, "package": p, "month": months,
+                                     "downloads": rng.integers(300, 900, len(months)) * (100 if ch == "pypi" else 1)})
+                       for ch, p, _ in pkgs]), "package_downloads")
+write_table(pd.DataFrame(pkgs, columns=["channel", "package", "service"]), "package_services")
+
 # --- Discord ----------------------------------------------------------------
 days = pd.date_range(now - pd.Timedelta(days=40), now)
 write_table(pd.DataFrame({"date": days, "members": np.arange(len(days)) + 800,
