@@ -70,7 +70,7 @@ Tokens (all go into `.env`):
 
 **GitHub** (`GITHUB_TOKEN`): <https://github.com/settings/personal-access-tokens> → *Generate new
 token* (fine-grained), repository access *Public repositories* (read-only) is enough for issues,
-commits, releases, stargazers and discussions. Without any token, stargazers and discussions are
+commits, releases and discussions. Without any token, discussions are
 skipped and the 60 requests/hour limit makes larger repos fail. Traffic (views/clones) additionally
 needs *Administration: read* on repos you own or admin; without it that card stays empty. GitHub keeps
 only 14 days of traffic, so that history builds up from the first run. List the repos and their

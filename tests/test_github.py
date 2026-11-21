@@ -23,7 +23,7 @@ class FakeGitHub(g.GitHub):
                  "category": {"name": "Q&A"}, "answer": None}]
 
     def get(self, url, params=None, accept=None, optional=False):
-        if "/traffic/" in url or url.endswith("/stargazers"):
+        if "/traffic/" in url:
             return None if optional else Resp([])
         if url.endswith("/issues"):
             self.since.append((params or {}).get("since"))
@@ -48,13 +48,12 @@ def issue(n, updated):
             **({"pull_request": {"merged_at": None}} if n % 2 else {})}
 
 
-def test_issues_incremental_and_stars_optional(data_dir, monkeypatch):
+def test_issues_incremental(data_dir, monkeypatch):
     monkeypatch.setenv("GITHUB_REPOS", "o/r")
     fake = FakeGitHub([issue(1, "2026-01-02T00:00:00Z"), issue(2, "2026-01-03T00:00:00Z")])
     monkeypatch.setattr(g, "GitHub", lambda token: fake)
     g.main()
     assert len(read_table("github_issues")) == 2
-    assert read_table("github_stars") is None          # no token -> skipped, no crash
 
     fake.issues = [issue(2, "2026-02-01T00:00:00Z"), issue(3, "2026-02-01T00:00:00Z")]
     g.main()

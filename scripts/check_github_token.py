@@ -50,22 +50,8 @@ def main():
 
     check("user", "/user")
     r_repo, _ = check(f"repo {repo}", f"/repos/{repo}")
-    r_star, _ = check("stargazers", f"/repos/{repo}/stargazers?per_page=1",
-                      accept="application/vnd.github.star+json")
-    check("stargazers (no timestamps)", f"/repos/{repo}/stargazers?per_page=1")
-    check("commits", f"/repos/{repo}/commits?per_page=1")
+    r_commits, _ = check("commits", f"/repos/{repo}/commits?per_page=1")
     owner, name = repo.split("/", 1)
-    r_sg, sg = check("stargazers (GraphQL)", "/graphql", method="POST",
-                     json={"query": "query($o:String!,$n:String!){repository(owner:$o,name:$n)"
-                                    "{stargazerCount stargazers(first:3){totalCount edges{starredAt}}}}",
-                           "variables": {"o": owner, "n": name}})
-    if r_sg.ok:
-        if sg.get("errors"):
-            print(f"{'':<28} GraphQL error: {sg['errors'][0].get('message')}")
-        else:
-            rp = sg["data"]["repository"]
-            print(f"{'':<28} stargazerCount {rp['stargazerCount']}, list totalCount "
-                  f"{rp['stargazers']['totalCount']}, first dates {[e['starredAt'] for e in rp['stargazers']['edges']]}")
     r_gql, gql = check("discussions (GraphQL)", "/graphql", method="POST",
                        json={"query": "query($o:String!,$n:String!){repository(owner:$o,name:$n)"
                                       "{hasDiscussionsEnabled}}", "variables": {"o": owner, "n": name}})
@@ -74,12 +60,9 @@ def main():
     r_traffic, _ = check("traffic (optional)", f"/repos/{repo}/traffic/views")
 
     print()
-    if r_repo.ok and r_gql.ok and not gql.get("errors") and (r_star.ok or r_star.status_code == 404):
+    if r_repo.ok and r_commits.ok and r_gql.ok and not gql.get("errors"):
         print("-> Token works for everything the dashboard needs.")
-        if r_star.status_code == 404:
-            print("   (GitHub doesn't expose the stargazer list for this repo; star history comes from the\n"
-                  "    nightly star counts instead. Nothing to fix on your side.)")
-    elif r_star.status_code in (401, 403) or r_repo.status_code == 404:
+    elif r_repo.status_code in (403, 404) or r_commits.status_code in (401, 403, 404):
         print("-> Token is valid but can't read this repo. Fine-grained token: set Repository access to\n"
               "   'Public repositories' (or 'All repositories'). Or use a classic token with no scopes ticked.")
     else:

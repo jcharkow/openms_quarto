@@ -9,8 +9,8 @@ for the funder KPIs (core, python, webapps, workflows), e.g.
     GITHUB_REPOS="OpenMS/OpenMS=core|python, OpenMS/pyopenms_viz=python, bigbio/quantms=workflows"
 
 Tables (data/*.parquet):
-  github_daily         one row per repo per day: stars, forks, watchers, open issues (history builds up)
-  github_stars         every stargazer with timestamp (full star history, rebuilt each run)
+  github_daily         one row per repo per day: stars, forks, watchers, open issues (history builds up;
+                       the only star history: GitHub removed the stargazer list API on 2026-06-30)
   github_issues        issues + PRs (incremental via `since`)
   github_contributors  commit counts per contributor
   github_releases      release assets and download counts
@@ -72,10 +72,6 @@ class GitHub:
             r = self.get(url, params, accept, optional)
             if r is None:
                 why = getattr(self, "last_skip", "")
-                if url.split("?")[0].endswith("/stargazers") and why.startswith("HTTP 404"):
-                    print(f"  skipped {url.split('?')[0]} ({why}; GitHub doesn't expose this star list —"
-                          f" star history comes from the nightly counts in github_daily)")
-                    return
                 session = getattr(self, "s", None)
                 has_token = session is not None and "Authorization" in session.headers
                 hint = ("token lacks access: fine-grained tokens need Repository access = Public repositories"
@@ -144,7 +140,7 @@ def main():
     commits_since = pd.Timestamp(os.environ.get("GITHUB_COMMITS_SINCE") or f"{today.year - 3}-01-01")
     print(f"GitHub: {', '.join(repos)}")
 
-    daily, stars, contribs, releases, traffic, issues, commits, discussions = [], [], [], [], [], [], [], []
+    daily, contribs, releases, traffic, issues, commits, discussions = [], [], [], [], [], [], []
     old_issues = read_table("github_issues")
     old_commits = read_table("github_commits")
 
@@ -154,10 +150,6 @@ def main():
                       "forks": info["forks_count"], "watchers": info.get("subscribers_count"),
                       "open_issues_and_prs": info["open_issues_count"]})
 
-        for s in gh.paginate(f"/repos/{repo}/stargazers", accept="application/vnd.github.star+json",
-                               optional=True):
-            if s.get("user"):
-                stars.append({"repo": repo, "user": s["user"]["login"].lower(), "starred_at": ts(s["starred_at"])})
 
         for c in gh.paginate(f"/repos/{repo}/contributors"):
             contribs.append({"repo": repo, "login": c["login"].lower(), "contributions": c["contributions"],
@@ -223,8 +215,6 @@ def main():
                                 "count": d["count"], "uniques": d["uniques"]})
 
     upsert("github_daily", pd.DataFrame(daily), ["date", "repo"])
-    if stars:
-        write_table(pd.DataFrame(stars), "github_stars")
     # explicit columns: a repo without releases must still give a table the dashboard can filter
     write_table(pd.DataFrame(contribs, columns=["repo", "login", "contributions", "is_bot"]), "github_contributors")
     write_table(pd.DataFrame(releases, columns=["repo", "tag", "published_at", "prerelease", "asset", "downloads"]),

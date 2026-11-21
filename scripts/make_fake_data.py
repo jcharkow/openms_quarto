@@ -65,17 +65,15 @@ write_table(pd.DataFrame({
     "created_at": created, "closed_at": closed,
     "merged_at": [c if p and pd.notna(c) else pd.NaT for c, p in zip(closed, is_pr)],
     "updated_at": created, "comments": 0}), "github_issues")
-write_table(pd.DataFrame({"repo": repo, "user": [f"u{i}" for i in range(300)] + authors[:10],
-                          "starred_at": now - pd.to_timedelta(np.sort(rng.integers(0, 2000, 310))[::-1], unit="D")}),
-            "github_stars")
 write_table(pd.DataFrame({"repo": repo, "login": authors, "contributions": rng.integers(1, 500, 30),
                           "is_bot": False}), "github_contributors")
 write_table(pd.DataFrame({"repo": repo, "tag": [f"Release3.{i}.0" for i in range(5)],
                           "published_at": [now - pd.Timedelta(days=300 - 60 * i) for i in range(5)],
                           "prerelease": False, "asset": "installer", "downloads": rng.integers(100, 3000, 5)}),
             "github_releases")
-write_table(pd.DataFrame({"date": [now], "repo": repo, "stars": 310, "forks": 300, "watchers": 40,
-                          "open_issues_and_prs": 130}), "github_daily")
+snap = pd.date_range(now - pd.Timedelta(days=420), now)          # nightly snapshots (the only star history)
+write_table(pd.DataFrame({"date": snap, "repo": repo, "stars": 250 + np.arange(len(snap)) // 7,
+                          "forks": 300, "watchers": 40, "open_issues_and_prs": 130}), "github_daily")
 days = pd.date_range(now - pd.Timedelta(days=13), now)
 write_table(pd.concat([pd.DataFrame({"repo": repo, "date": days, "kind": k,
                                      "count": rng.integers(50, 300, 14), "uniques": rng.integers(10, 80, 14)})
