@@ -54,16 +54,27 @@ stores no message text.
    - Under *Privileged Gateway Intents* switch on **Server Members Intent** (member list with join
      dates). *Message Content Intent* is **not** needed. Save.
    - Optionally turn off *Public Bot* so nobody else can invite it.
-3. Invite it to the server (you need *Manage Server* there). Open this URL with your application ID
-   (*General Information* → *Application ID*); it grants *View Channels* + *Read Message History*:
+3. Invite it to the server. This needs **Manage Server** (or Administrator) on the OpenMS server;
+   without it, generate the link below and send it to a server admin.
+   - Get an invite link: in the developer portal open *OAuth2 → URL Generator*, tick scope **bot**,
+     then bot permissions **View Channels** and **Read Message History** (nothing else), keep
+     *Guild Install*, and copy the *Generated URL*. Equivalent by hand, with the ID from
+     *General Information → Application ID* (66560 = View Channels 1024 + Read Message History 65536):
 
-   ```
-   https://discord.com/oauth2/authorize?client_id=<APPLICATION_ID>&scope=bot&permissions=66560
-   ```
+     ```
+     https://discord.com/oauth2/authorize?client_id=<APPLICATION_ID>&scope=bot&permissions=66560
+     ```
 
+   - Open the link in a browser logged into Discord, pick the OpenMS server under *Add to server*
+     (only servers where you have Manage Server are listed), *Continue*, check the two permissions,
+     *Authorize*, solve the captcha.
+   - The bot now appears in the member list as **offline** — expected: it never connects live, it only
+     reads the API once a night. Discord gives it a role named after the bot with those permissions.
+   - To remove it later: right-click the bot → *Kick*, and reset the token in the developer portal.
 4. Server ID: Discord → User Settings → Advanced → enable *Developer Mode*, then right-click the
    server icon → *Copy Server ID* → `DISCORD_GUILD_ID`.
-5. Private channels are only counted if the bot's role can see them (channel → Edit → Permissions).
+5. Private channels are only counted if the bot's role can see them: *Edit Channel → Permissions →
+   Add members or roles* → the bot's role → allow *View Channel* + *Read Message History*.
 6. Test: `.venv/bin/python -m ingest.discord_snapshot`. A 403 on the member list means the Server
    Members Intent is off; a 401 means a wrong token.
 
