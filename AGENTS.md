@@ -22,7 +22,7 @@ Studio in 2026). Keep it lightweight: no database, no app server, no SaaS in the
 | `FUNDER_METRICS.md` | Which de.NBI report KPIs are automated on the Funder KPIs page and which are still missing |
 | `ingest/discord_snapshot.py` | → `discord_daily`, `discord_members`, `discord_messages` |
 | `dashboard/index.qmd` | The whole dashboard (one file, `#` headings = pages) |
-| `Dockerfile`, `docker-compose.yml`, `docker-refresh.sh` | Image with Python deps + Quarto running `refresh.sh`. Compose passes `.env` via `env_file` (pinned paths in `environment:` win), mounts `data/` + site dir; `docker-refresh.sh` runs it as the host user. CI builds it, renders fake data inside and checks the `.env` pass-through |
+| `Dockerfile`, `docker-compose.yml`, `docker-refresh.sh` | Image with Python deps + Quarto running `refresh.sh`. `docker-refresh.sh` sources `.env` with bash and passes vars with `-e NAME` (never `env_file`: Compose's parser keeps inline comments), runs as the host user; compose pins the image paths in `environment:` and mounts `data/` + site dir. CI builds it, renders fake data inside and checks the `.env` pass-through |
 | `setup.sh` | Creates/repairs `.venv` (uv or venv+pip); `refresh.sh` calls it on first run or when `requirements.txt` changes |
 | `scripts/make_fake_data.py` | Fake data for every table, for offline testing |
 | `scripts/check_render.py` | Prints value boxes / placeholders of a rendered page; fails on tracebacks (`--strict`: also on placeholders) |

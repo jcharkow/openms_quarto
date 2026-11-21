@@ -9,10 +9,8 @@ services:
     image: openms-dashboard
     # write data/ and site/ as your user, not root (docker-refresh.sh sets these)
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
-    # .env is read by Compose on the host and passed in as variables, so its file permissions
-    # (chmod 600) don't matter inside the container
-    env_file: .env
-    # these win over env_file: the image's own paths, whatever .env says
+    # .env is loaded by docker-refresh.sh with bash and passed in with -e (not env_file: Compose's
+    # .env parser differs from bash, e.g. inline comments). The image's own paths:
     environment:
       PYTHON: /usr/local/bin/python
       QUARTO: /usr/local/bin/quarto
