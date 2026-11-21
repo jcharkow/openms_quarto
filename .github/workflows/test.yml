@@ -53,6 +53,12 @@ jobs:
           cd .. && python scripts/check_render.py dashboard/index.html --strict
           mkdir -p "$RUNNER_TEMP/site" && cp -r dashboard/index.html dashboard/index_files "$RUNNER_TEMP/site/"
 
+      - name: Check the fake-data dashboard in a browser (tables, charts on every page/tab, JS errors)
+        run: |
+          pip install playwright
+          python -m playwright install --with-deps chromium-headless-shell
+          python scripts/check_browser.py "$RUNNER_TEMP/site/index.html" --screenshots "$RUNNER_TEMP/site/screenshots"
+
       - name: Render with no data (first-run state)
         env:
           OPENMS_DATA_DIR: ${{ runner.temp }}/empty

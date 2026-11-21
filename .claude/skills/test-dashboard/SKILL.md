@@ -35,5 +35,8 @@ Never use the real `data/` directory for this.
 
 6. Clean up: `rm -rf dashboard/index.html dashboard/index_files dashboard/.quarto`.
 
-Layout can't be checked from HTML alone. If a browser isn't available, tell the user to run
-`cd dashboard && quarto preview index.qmd` and look at it.
+7. Browser check (layout and JavaScript can't be checked from HTML alone):
+   `python scripts/check_browser.py dashboard/index.html --screenshots <scratch>/shots` — needs
+   `pip install playwright && python -m playwright install --with-deps chromium-headless-shell`.
+   Without root for the system libraries, run it inside the project's Docker image (install
+   `libatomic1` there first). Look at the screenshots too: legends, clipped labels, empty cards.

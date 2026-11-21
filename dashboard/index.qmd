@@ -10,58 +10,74 @@ execute:
 
 ```{python}
 #| include: false
-import re
+import json
 import sys
+import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path.cwd().parent))
 
+import altair as alt
 import pandas as pd
-import plotly.express as px
-import plotly.io as pio
-from IPython.display import Markdown, display
+from IPython.display import HTML, Markdown, display
 from itables import init_notebook_mode, show
 
 from ingest.common import SERVICES, kpi_periods, read_table
 
-pio.templates.default = "plotly_white"
-
-# Plotly's notebook renderer adds a MathJax CDN <script> to every chart; loading MathJax once per chart
-# breaks legends ("Cannot set property Package"). No maths here, so strip it (also: no CDN request).
-from plotly.io._base_renderers import NotebookRenderer
-
-class _NoMathJaxRenderer(NotebookRenderer):
-    def to_mimebundle(self, fig_dict):
-        bundle = super().to_mimebundle(fig_dict)
-        bundle["text/html"] = re.sub(r'<script src="[^"]*mathjax[^"]*"></script>', "", bundle["text/html"])
-        return bundle
-
-pio.renderers["notebook_nomathjax"] = _NoMathJaxRenderer()
-pio.renderers.default = "notebook_nomathjax"
 BLUE, ORANGE = "#2E75B6", "#C55A11"
+
+# --- Altair: charts fill their card, legends below, offline (Vega is embedded once, see next cell) ---
+alt.data_transformers.disable_max_rows()
+
+@alt.theme.register("openms", enable=True)
+def _openms_theme():
+    return alt.theme.ThemeConfig({
+        "width": "container", "height": "container",
+        "autosize": {"type": "fit", "contains": "padding"},
+        "config": {"view": {"stroke": None}, "legend": {"orient": "bottom", "title": None},
+                   "axis": {"labelFontSize": 11, "titleFontSize": 12, "grid": True, "gridColor": "#eee"},
+                   "range": {"category": [BLUE, ORANGE, "#70AD47", "#7F6000", "#7030A0", "#A5A5A5",
+                                          "#4BACC6", "#F79646", "#2F5597", "#C00000"]}},
+    })
+
+def _vega_html(spec, **kwargs):
+    """Altair renderer: a div that fills the card, drawn once the embedded Vega bundle is ready."""
+    div = "vega-" + uuid.uuid4().hex[:12]
+    data = json.dumps(spec).replace("</", "<\\/")
+    return {"text/html":
+            f'<div id="{div}" style="width:100%;height:100%;min-height:160px"></div>'
+            f'<script>(function draw() {{ if (window.vegaEmbed) vegaEmbed("#{div}", {data}, {{actions: false}});'
+            f' else setTimeout(draw, 50); }})();</script>'}
+
+alt.renderers.register("dashboard", _vega_html)
+alt.renderers.enable("dashboard")
 
 def none_msg(what):
     return Markdown(f"*No {what} data yet. Run the matching ingest script (see README).*")
 
 def hbar(counts: pd.Series, title="", xlabel="Respondents"):
-    d = counts.sort_values().reset_index()
+    d = counts.reset_index()
     d.columns = ["label", "n"]
-    fig = px.bar(d, x="n", y="label", orientation="h", text="n", title=title,
-                 color_discrete_sequence=[BLUE], labels={"n": xlabel, "label": ""})
-    fig = fig.update_layout(height=max(260, 28 * len(d) + 90), margin=dict(l=10, r=10, t=40, b=10))
-    return fig
+    base = alt.Chart(d, title=title or alt.Undefined).encode(
+        x=alt.X("n:Q", title=xlabel), y=alt.Y("label:N", sort="-x", title=None),
+        tooltip=[alt.Tooltip("label:N", title=""), alt.Tooltip("n:Q", title=xlabel)])
+    return (base.mark_bar(color=BLUE) + base.mark_text(align="left", dx=3).encode(text="n:Q")) \
+        .properties(height=max(200, 26 * len(d)))
 
 def per_period(dates: pd.Series, label="Per period"):
     dates = dates.dropna()
     span = (dates.max() - dates.min()).days if len(dates) else 0
     freq = "D" if span <= 60 else ("W" if span <= 365 else "MS")
     s = dates.dt.floor("D").value_counts().sort_index().resample(freq).sum()
-    d = pd.DataFrame({"date": s.index, label: s.values, "Cumulative": s.cumsum().values})
-    fig = px.bar(d, x="date", y=label, color_discrete_sequence=[BLUE])
-    fig = fig.add_scatter(x=d.date, y=d.Cumulative, name="Cumulative", yaxis="y2", line=dict(color=ORANGE, width=2))
-    fig = fig.update_layout(yaxis2=dict(overlaying="y", side="right", title="Cumulative", showgrid=False),
-                      legend=dict(orientation="h", y=1.1), margin=dict(l=10, r=10, t=30, b=10), xaxis_title="")
-    return fig
+    d = pd.DataFrame({"date": s.index, "n": s.values, "cumulative": s.cumsum().values})
+    base = alt.Chart(d).encode(x=alt.X("date:T", title=None))
+    bars = base.mark_bar(color=BLUE).encode(
+        y=alt.Y("n:Q", title=label, axis=alt.Axis(titleColor=BLUE)),
+        tooltip=[alt.Tooltip("date:T"), alt.Tooltip("n:Q", title=label)])
+    line = base.mark_line(color=ORANGE, strokeWidth=2).encode(
+        y=alt.Y("cumulative:Q", title="Cumulative", axis=alt.Axis(titleColor=ORANGE, grid=False)),
+        tooltip=[alt.Tooltip("date:T"), alt.Tooltip("cumulative:Q", title="Cumulative")])
+    return alt.layer(bars, line).resolve_scale(y="independent")
 
 resp = read_table("survey_respondents")
 choices = read_table("survey_choices")
@@ -96,6 +112,13 @@ updated = pd.Timestamp.now().strftime("%d %b %Y %H:%M")
 # Embeds the DataTables library in the page (offline). Must not be include: false, or every
 # itables table stays on "Loading ITables...".
 init_notebook_mode(all_interactive=False, connected=False)
+# Same for Altair: embed Vega/Vega-Lite/vega-embed once (offline); charts wait for window.vegaEmbed
+import vl_convert
+display(HTML('<script type="module">' + vl_convert.javascript_bundle() + "</script>"))
+# Charts in tabs that start hidden are drawn 0 px wide; Vega re-measures on window resize, so fire one
+# whenever a tab or dashboard page is shown.
+display(HTML("<script>['shown.bs.tab', 'shown.bs.pill'].forEach(e => document.addEventListener(e, "
+             "() => window.dispatchEvent(new Event('resize'))));</script>"))
 ```
 
 # Overview
@@ -140,10 +163,9 @@ per_period(resp.submitted_at, "Sign-ups") if n_resp else none_msg("survey")
 #| title: GitHub stars over time
 if gh_daily is not None and not gh_daily.empty:
     # nightly star counts: GitHub removed the stargazer list API on 2026-06-30
-    fig = px.line(gh_daily.sort_values("date"), x="date", y="stars", color="repo", markers=True,
-                  labels={"date": "", "stars": "Stars"})
-    fig = fig.update_layout(margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h", y=1.1))
-    fig
+    alt.Chart(gh_daily).mark_line(point=True).encode(
+        x=alt.X("date:T", title=None), y=alt.Y("stars:Q", title="Stars", scale=alt.Scale(zero=False)),
+        color="repo:N", tooltip=["repo:N", "date:T", "stars:Q"])
 else:
     none_msg("GitHub")
 ```
@@ -217,9 +239,14 @@ if n_resp and choices is not None and not choices.empty:
          .pivot_table(index="role", columns="option", values="submission_id", aggfunc="count", fill_value=0))
     top_roles = resp.role.value_counts().head(8).index
     m = m.reindex([r for r in top_roles if r in m.index])
-    fig = px.imshow(m, text_auto=True, color_continuous_scale="Blues", aspect="auto", labels=dict(x="", y="", color="n"))
-    fig = fig.update_layout(margin=dict(l=10, r=10, t=10, b=10))
-    fig
+    long = m.reset_index().melt(id_vars="role", var_name="interest", value_name="n")
+    base = alt.Chart(long).encode(x=alt.X("interest:N", title=None, axis=alt.Axis(labelAngle=-30, grid=False)),
+                                  y=alt.Y("role:N", title=None, sort=list(m.index), axis=alt.Axis(grid=False)))
+    (base.mark_rect().encode(color=alt.Color("n:Q", scale=alt.Scale(scheme="blues"), legend=None),
+                             tooltip=["role:N", "interest:N", "n:Q"])
+     + base.mark_text().encode(text="n:Q",
+                               color=alt.when(alt.datum.n > long.n.max() / 2).then(alt.value("white"))
+                                         .otherwise(alt.value("black"))))
 else:
     none_msg("survey")
 ```
@@ -281,11 +308,9 @@ if issues is not None and not issues.empty:
     d = issues.assign(month=issues.created_at.dt.to_period("M").dt.to_timestamp(),
                       kind=issues.is_pr.map({True: "Pull requests", False: "Issues"}))
     d = d[d.month >= pd.Timestamp.now() - pd.DateOffset(years=3)]
-    fig = px.bar(d.groupby(["month", "kind"]).size().reset_index(name="n"), x="month", y="n", color="kind",
-                 barmode="group", labels={"month": "", "n": "Opened", "kind": ""},
-                 color_discrete_sequence=[BLUE, ORANGE])
-    fig = fig.update_layout(margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h", y=1.1))
-    fig
+    alt.Chart(d.groupby(["month", "kind"]).size().reset_index(name="n")).mark_bar().encode(
+        x=alt.X("yearmonth(month):O", title=None), xOffset="kind:N", y=alt.Y("n:Q", title="Opened"),
+        color="kind:N", tooltip=[alt.Tooltip("yearmonth(month):O", title="Month"), "kind:N", "n:Q"])
 else:
     none_msg("GitHub")
 ```
@@ -298,10 +323,9 @@ if issues is not None and not issues.empty:
     first = p.groupby("author").created_at.transform("min")
     p["type"] = (p.created_at == first).map({True: "First-time", False: "Returning"})
     d = p.groupby(["month", "type"]).author.nunique().reset_index(name="authors")
-    fig = px.bar(d, x="month", y="authors", color="type", labels={"month": "", "type": ""},
-                 color_discrete_sequence=[BLUE, ORANGE])
-    fig = fig.update_layout(margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h", y=1.1))
-    fig
+    alt.Chart(d).mark_bar().encode(
+        x=alt.X("yearmonth(month):O", title=None), y=alt.Y("authors:Q", title="PR authors"),
+        color="type:N", tooltip=[alt.Tooltip("yearmonth(month):O", title="Month"), "type:N", "authors:Q"])
 else:
     none_msg("GitHub")
 ```
@@ -313,9 +337,9 @@ else:
 if releases is not None and not releases.empty:
     r = (releases.groupby(["tag", "published_at"]).downloads.sum().reset_index()
          .sort_values("published_at").tail(15))
-    fig = px.bar(r, x="tag", y="downloads", color_discrete_sequence=[BLUE], labels={"tag": ""})
-    fig = fig.update_layout(margin=dict(l=10, r=10, t=10, b=10))
-    fig
+    alt.Chart(r).mark_bar(color=BLUE).encode(
+        x=alt.X("tag:N", title=None, sort=list(r.tag), axis=alt.Axis(labelAngle=-30)),
+        y=alt.Y("downloads:Q", title="Downloads"), tooltip=["tag:N", "published_at:T", "downloads:Q"])
 else:
     none_msg("release")
 ```
@@ -455,11 +479,9 @@ else:
 #| title: Monthly package downloads
 if pkg_dl is not None and not pkg_dl.empty:
     d = pkg_dl.assign(series=pkg_dl.channel + ": " + pkg_dl.package)
-    fig = px.line(d, x="month", y="downloads", color="series", log_y=True,
-                  labels={"month": "", "downloads": "Downloads (log)", "series": ""})
-    fig = fig.update_layout(margin=dict(l=10, r=10, t=10, b=10),
-                            legend=dict(orientation="h", yanchor="top", y=-0.12))
-    fig
+    alt.Chart(d[d.downloads > 0]).mark_line(point=True).encode(
+        x=alt.X("month:T", title=None), y=alt.Y("downloads:Q", title="Downloads (log)", scale=alt.Scale(type="log")),
+        color="series:N", tooltip=["series:N", alt.Tooltip("yearmonth(month):T", title="Month"), "downloads:Q"])
 else:
     none_msg("package download")
 ```
@@ -531,17 +553,17 @@ dict(icon="arrow-left-right", color="secondary", value=v)
 #| title: Members over time
 #| footer: "Reconstructed = current members by join date (people who left are missing, so the past is slightly overstated). Daily count = exact, from our snapshots."
 if dc_members is not None or dc_daily is not None:
-    import plotly.graph_objects as go
-    fig = go.Figure()
+    parts = []
     if dc_members is not None and not dc_current.empty:
         j = dc_current.joined_at.dropna().sort_values()
-        fig = fig.add_scatter(x=j, y=list(range(1, len(j) + 1)), name="Reconstructed from join dates",
-                        line=dict(color=BLUE, shape="hv"))
+        parts.append(pd.DataFrame({"date": j.values, "members": range(1, len(j) + 1),
+                                   "series": "Reconstructed from join dates"}))
     if dc_daily is not None:
-        fig = fig.add_scatter(x=dc_daily.date, y=dc_daily.members, name="Daily count", mode="lines+markers",
-                        line=dict(color=ORANGE))
-    fig = fig.update_layout(margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h", y=1.1))
-    fig
+        parts.append(pd.DataFrame({"date": dc_daily.date, "members": dc_daily.members, "series": "Daily count"}))
+    alt.Chart(pd.concat(parts)).mark_line(interpolate="step-after").encode(
+        x=alt.X("date:T", title=None), y=alt.Y("members:Q", title="Members"),
+        color=alt.Color("series:N", sort=["Reconstructed from join dates", "Daily count"]),
+        tooltip=["series:N", "date:T", "members:Q"])
 else:
     none_msg("Discord")
 ```
@@ -551,9 +573,9 @@ else:
 if dc_members is not None and not dc_members.empty:
     d = dc_members.assign(month=dc_members.joined_at.dt.to_period("M").dt.to_timestamp())
     d = d.groupby("month").size().reset_index(name="joined")
-    fig = px.bar(d, x="month", y="joined", color_discrete_sequence=[BLUE], labels={"month": ""})
-    fig = fig.update_layout(margin=dict(l=10, r=10, t=10, b=10))
-    fig
+    alt.Chart(d).mark_bar(color=BLUE).encode(
+        x=alt.X("month:T", title=None), y=alt.Y("joined:Q", title="Joined"),
+        tooltip=[alt.Tooltip("yearmonth(month):T", title="Month"), "joined:Q"])
 else:
     none_msg("Discord member")
 ```
@@ -563,9 +585,9 @@ else:
 if dc_msgs is not None and not dc_msgs.empty:
     d = (dc_msgs.assign(week=dc_msgs.created_at.dt.to_period("W").dt.start_time)
          .groupby(["week", "channel"]).size().reset_index(name="messages"))
-    fig = px.bar(d, x="week", y="messages", color="channel", labels={"week": ""})
-    fig = fig.update_layout(margin=dict(l=10, r=10, t=10, b=10))
-    fig
+    alt.Chart(d).mark_bar().encode(
+        x=alt.X("week:T", title=None), y=alt.Y("messages:Q", title="Messages"),
+        color="channel:N", tooltip=["channel:N", alt.Tooltip("week:T", title="Week of"), "messages:Q"])
 else:
     none_msg("Discord message")
 ```

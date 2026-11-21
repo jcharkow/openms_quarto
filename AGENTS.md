@@ -26,6 +26,7 @@ Studio in 2026). Keep it lightweight: no database, no app server, no SaaS in the
 | `setup.sh` | Creates/repairs `.venv` (uv or venv+pip); `refresh.sh` calls it on first run or when `requirements.txt` changes |
 | `scripts/make_fake_data.py` | Fake data for every table, for offline testing |
 | `scripts/check_render.py` | Prints value boxes / placeholders of a rendered page; fails on tracebacks (`--strict`: also on placeholders) |
+| `scripts/check_browser.py` | Opens the rendered page in headless Chromium (playwright): tables initialise, every chart on every page/tab drawn, no JS errors |
 | `tests/` | pytest unit tests for ingest + survey cleaning (fake API clients, no network) |
 | `.github/workflows/test.yml` | CI: pytest + fake-data render on PRs |
 | `openms_survey_report.py` | Legacy PDF report from a CSV export; imports `ingest/common.py` |
@@ -57,8 +58,10 @@ Ingest modules run as `python -m ingest.<name>` from the repo root.
   Optional API parts (no token, missing permission) print a hint and skip instead of crashing.
 - Dashboard cells must tolerate any table being `None` or empty: use `none_msg("...")`.
   Value boxes: a cell with `#| content: valuebox`, `#| title: ...`, ending in
-  `dict(icon=<bootstrap icon>, color=..., value=...)`. Charts: Plotly Express with `BLUE`/`ORANGE`,
-  `margin=dict(l=10, r=10, t=10, b=10)`. Tables: `itables.show(...)`.
+  `dict(icon=<bootstrap icon>, color=..., value=...)`. Charts: **Altair**, cell ends with the chart
+  expression; the `openms` theme (setup cell) sets container sizing, `BLUE`/`ORANGE` palette and
+  legends below. Tables: `itables.show(...)`. Both JS libraries are embedded once, offline, in the
+  hidden init cell; keep that cell (not `include: false`).
 - Target pandas ≥ 2.1 including pandas 3 (string dtype default, copy-on-write).
 
 ## Testing
@@ -74,6 +77,8 @@ export OPENMS_DATA_DIR=$(mktemp -d)          # dashboard render with fake data
 python scripts/make_fake_data.py
 (cd dashboard && quarto render index.qmd)
 python scripts/check_render.py dashboard/index.html --strict
+# browser check (pip install playwright && python -m playwright install --with-deps chromium-headless-shell)
+python scripts/check_browser.py dashboard/index.html
 rm -rf dashboard/index.html dashboard/index_files dashboard/.quarto
 ```
 
@@ -102,7 +107,9 @@ See `.claude/skills/` for step-by-step workflows.
 - Tally API answer shapes vary by question type (labels, option ids, objects); `tally._label`
   handles the known cases. Untitled checkbox questions become `Untitled checkboxes field (<option>)`
   to match the CSV export.
-- Plotly rejects a Python `range` for `y`: use a list.
+- Charts in hidden tabs/pages are drawn 0 px wide; the init cell fires a window resize on tab show so
+  Vega re-measures. `check_browser.py` catches blank charts, stuck tables and JS errors that
+  `check_render.py` (HTML only) can't see.
 - `refresh.sh`: variables already set in the environment win over `.env` (Docker sets
   `PYTHON`, `QUARTO`, `DEPLOY_DIR`, `HOME`). Keep it that way.
 - `refresh.sh` uses `realpath -s` so a venv's python symlink isn't resolved to system python.

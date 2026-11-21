@@ -1,7 +1,8 @@
 pandas>=2.1
 pyarrow>=15
 requests>=2.31
-plotly>=5.20
+altair>=5.5
+vl-convert-python>=1.7   # Vega JS bundle, embedded once for offline charts
 itables>=2.0
 jupyter>=1.0
 # only for the PDF report (openms_survey_report.py)
