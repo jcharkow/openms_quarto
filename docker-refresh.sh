@@ -42,5 +42,6 @@ fi
 TTY=()
 [ -t 0 ] && [ -t 1 ] || TTY=(-T)          # cron / CI: no terminal
 
+echo "Building the image (instant if nothing changed; a few minutes after requirement updates)..."
 docker compose build --quiet
 exec docker compose run --rm "${TTY[@]}" "${ENV_ARGS[@]}" dashboard "$@"

@@ -66,8 +66,12 @@ class GitHub:
 
     def paginate(self, url, params=None, accept=None, optional=False):
         params = {"per_page": 100, **(params or {})}
+        pages, endpoint = 0, url.split("?")[0]
         while url:
             r = self.get(url, params, accept, optional)
+            pages += 1
+            if pages % 10 == 0:
+                print(f"    ... {endpoint}: {pages} pages so far", flush=True)
             if r is None:
                 why = getattr(self, "last_skip", "")
                 session = getattr(self, "s", None)
@@ -143,6 +147,7 @@ def main():
     old_commits = read_table("github_commits")
 
     for repo in repos:
+        print(f"  {repo}", flush=True)
         info = gh.get(f"/repos/{repo}").json()
         daily.append({"date": pd.Timestamp(today), "repo": repo, "stars": info["stargazers_count"],
                       "forks": info["forks_count"], "watchers": info.get("subscribers_count"),
@@ -166,6 +171,9 @@ def main():
             if not mine.empty:
                 since = (mine.updated_at.max() - pd.Timedelta(days=1)).isoformat() + "Z"
         params = {"state": "all", "sort": "updated", "direction": "asc", **({"since": since} if since else {})}
+        print(f"    issues/PRs {'updated since ' + since[:10] if since else '(full history, first run: can take minutes)'}",
+              flush=True)
+        n0 = len(issues)
         for i in gh.paginate(f"/repos/{repo}/issues", params):
             pr = i.get("pull_request")
             issues.append({"repo": repo, "number": i["number"], "is_pr": pr is not None,
@@ -177,12 +185,16 @@ def main():
                            "merged_at": ts(pr.get("merged_at")) if pr else pd.NaT,
                            "updated_at": ts(i["updated_at"]), "comments": i.get("comments", 0)})
 
+        print(f"    {len(issues) - n0} issues/PRs", flush=True)
+
         # Default-branch commits, incremental (one day overlap; de-duplicated by sha)
         since = commits_since
         if old_commits is not None and not old_commits.empty:
             mine = old_commits[old_commits.repo == repo]
             if not mine.empty:
                 since = max(since, mine.committed_at.max() - pd.Timedelta(days=1))
+        print(f"    commits since {since:%Y-%m-%d}", flush=True)
+        n0 = len(commits)
         for c in gh.paginate(f"/repos/{repo}/commits", {"since": since.isoformat() + "Z"}):
             author = c.get("author") or {}
             login = (author.get("login") or "").lower() or None
@@ -192,6 +204,7 @@ def main():
                             "committed_at": ts(c["commit"]["committer"]["date"]),
                             "is_merge": len(c.get("parents") or []) > 1})
 
+        print(f"    {len(commits) - n0} commits; discussions", flush=True)
         disc = gh.discussions(repo)
         if disc is None:
             print(f"  {repo}: no token, skipping discussions")
