@@ -74,10 +74,6 @@ write_table(pd.DataFrame({"repo": repo, "tag": [f"Release3.{i}.0" for i in range
 snap = pd.date_range(now - pd.Timedelta(days=420), now)          # nightly snapshots (the only star history)
 write_table(pd.DataFrame({"date": snap, "repo": repo, "stars": 250 + np.arange(len(snap)) // 7,
                           "forks": 300, "watchers": 40, "open_issues_and_prs": 130}), "github_daily")
-days = pd.date_range(now - pd.Timedelta(days=13), now)
-write_table(pd.concat([pd.DataFrame({"repo": repo, "date": days, "kind": k,
-                                     "count": rng.integers(50, 300, 14), "uniques": rng.integers(10, 80, 14)})
-                       for k in ("views", "clones")]), "github_traffic")
 
 # --- Funder KPIs: commits, discussions, service mapping, package downloads ----
 write_table(pd.DataFrame({"repo": [repo, repo, "OpenMS/pyopenms_viz", "bigbio/quantms"],

@@ -17,7 +17,7 @@ Studio in 2026). Keep it lightweight: no database, no app server, no SaaS in the
 |---|---|
 | `ingest/common.py` | Survey column names, cleaning helpers, `tidy_survey`, `read_table`/`write_table`, `DATA_DIR` |
 | `ingest/tally.py` | Tally API (or `--csv`) → `survey_respondents`, `survey_choices` |
-| `ingest/github.py` | → `github_daily`, `github_issues`, `github_contributors`, `github_releases`, `github_traffic`, `github_commits`, `github_discussions`, `github_repo_services` |
+| `ingest/github.py` | → `github_daily`, `github_issues`, `github_contributors`, `github_releases`, `github_commits`, `github_discussions`, `github_repo_services` |
 | `ingest/packages.py` | → `package_downloads`, `package_services` (Bioconda monthly parquet + ClickPy/PyPI, public) |
 | `FUNDER_METRICS.md` | Which de.NBI report KPIs are automated on the Funder KPIs page and which are still missing |
 | `ingest/discord_snapshot.py` | → `discord_daily`, `discord_members`, `discord_messages` |
@@ -42,8 +42,8 @@ Ingest modules run as `python -m ingest.<name>` from the repo root.
 - **Never commit** `.env`, `data/`, CSV exports, PDFs, or rendered output (see `.gitignore`).
 - **Never run ingest or `make_fake_data.py` against the real `data/` while testing.** Set
   `OPENMS_DATA_DIR` to a scratch directory. `make_fake_data.py` refuses real `data/` unless `--force`.
-- **History is irreplaceable.** `discord_daily`, `discord_members` (left_seen), `github_daily` and
-  `github_traffic` accumulate over runs and cannot be re-fetched. Ingest changes must merge with
+- **History is irreplaceable.** `discord_daily`, `discord_members` (left_seen), `github_daily` (and an old
+  `github_traffic`, no longer ingested) accumulate over runs and cannot be re-fetched. Ingest changes must merge with
   existing tables (`upsert` pattern), never drop old rows.
 
 ## Conventions
@@ -94,7 +94,8 @@ See `.claude/skills/` for step-by-step workflows.
 - Bioconda monthly files are ~10 MB each; `ingest.packages` skips months it already has. Don't
   backfill many months in tests.
 - GitHub removed the stargazer list API on 2026-06-30 (`/stargazers` is 404, GraphQL returns an empty
-  list): star history only exists as the nightly counts in `github_daily`. Traffic needs push access.
+  list): star history only exists as the nightly counts in `github_daily`. Traffic (views/clones) is not
+  ingested: it needs a token from an account with push access.
   Anonymous rate limit is 60 req/h — test against small repos (e.g. `OpenMS/umetaflow`).
 - Discord member list needs the bot's **Server Members Intent**; without it the API returns 403.
   Discord IDs are snowflakes: page with `after=max(id)`, not list order.

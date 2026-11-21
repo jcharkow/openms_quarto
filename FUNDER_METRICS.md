@@ -40,7 +40,7 @@ Packages are tagged the same way in `BIOCONDA_PACKAGES` / `PYPI_PACKAGES`.
 | Discussion response times / accepted answers | Partly available (`answered_at` is stored) | Add first-reply time via GraphQL `comments(first:1)` |
 | Installer / container downloads per year | GitHub release counters are lifetime only; GHCR/Quay give no annual totals | Snapshot lifetime counters daily and diff them (history builds up) |
 | CI runs / test history (Jenkins) | Not related to user activity; Jenkins history is separate | Actions API run counts if wanted |
-| GitHub traffic beyond 14 days | GitHub only keeps 14 days | Already accumulating in `github_traffic` from first run on |
+| GitHub traffic (views / clones) | Deliberately not ingested: the API needs a token from an account with push access, GitHub keeps only 14 days, and clones are mostly automation | Fine-grained token with only *Administration: read* on selected repos, if ever wanted |
 | Reconciliation of old report figures (247/364 PRs, 1,174 commits, 24,357 "runs") | Old method/scope unknown; "runs" were WebApp pageviews | Documented in the KPI evidence workbook; not reproduced |
 
 ## Caveats shown on the page

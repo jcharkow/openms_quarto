@@ -14,8 +14,6 @@ Tables (data/*.parquet):
   github_issues        issues + PRs (incremental via `since`)
   github_contributors  commit counts per contributor
   github_releases      release assets and download counts
-  github_traffic       views / clones per day (needs push access; GitHub only keeps 14 days,
-                       so this table keeps everything it has seen)
   github_commits       default-branch commits (incremental; backfill from GITHUB_COMMITS_SINCE,
                        default 1 January three years ago)
   github_discussions   discussions (GraphQL, needs a token)
@@ -140,7 +138,7 @@ def main():
     commits_since = pd.Timestamp(os.environ.get("GITHUB_COMMITS_SINCE") or f"{today.year - 3}-01-01")
     print(f"GitHub: {', '.join(repos)}")
 
-    daily, contribs, releases, traffic, issues, commits, discussions = [], [], [], [], [], [], []
+    daily, contribs, releases, issues, commits, discussions = [], [], [], [], [], []
     old_issues = read_table("github_issues")
     old_commits = read_table("github_commits")
 
@@ -205,15 +203,6 @@ def main():
                                 "category": (d.get("category") or {}).get("name"),
                                 "answered_at": ts((d.get("answer") or {}).get("createdAt"))})
 
-        for kind in ("views", "clones"):
-            r = gh.get(f"/repos/{repo}/traffic/{kind}", optional=True)
-            if r is None:
-                print(f"  {repo}: no push access, skipping traffic/{kind}")
-                continue
-            for d in r.json().get(kind, []):
-                traffic.append({"repo": repo, "date": ts(d["timestamp"]), "kind": kind,
-                                "count": d["count"], "uniques": d["uniques"]})
-
     upsert("github_daily", pd.DataFrame(daily), ["date", "repo"])
     # explicit columns: a repo without releases must still give a table the dashboard can filter
     write_table(pd.DataFrame(contribs, columns=["repo", "login", "contributions", "is_bot"]), "github_contributors")
@@ -221,8 +210,6 @@ def main():
                 "github_releases")
     if issues:
         upsert("github_issues", pd.DataFrame(issues), ["repo", "number"])
-    if traffic:
-        upsert("github_traffic", pd.DataFrame(traffic), ["repo", "date", "kind"])
     if commits:
         upsert("github_commits", pd.DataFrame(commits), ["repo", "sha"])
     if discussions:

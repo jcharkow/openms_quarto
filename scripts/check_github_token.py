@@ -57,7 +57,6 @@ def main():
                                       "{hasDiscussionsEnabled}}", "variables": {"o": owner, "n": name}})
     if gql.get("errors"):
         print(f"{'':<28} GraphQL error: {gql['errors'][0].get('message')}")
-    r_traffic, _ = check("traffic (optional)", f"/repos/{repo}/traffic/views")
 
     print()
     if r_repo.ok and r_commits.ok and r_gql.ok and not gql.get("errors"):
@@ -67,8 +66,6 @@ def main():
               "   'Public repositories' (or 'All repositories'). Or use a classic token with no scopes ticked.")
     else:
         print("-> Unexpected result; send this output.")
-    if r_traffic.status_code in (401, 403, 404):
-        print("   Traffic is optional: it needs write access to the repo (see README).")
     return 0
 
 

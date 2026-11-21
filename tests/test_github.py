@@ -23,8 +23,6 @@ class FakeGitHub(g.GitHub):
                  "category": {"name": "Q&A"}, "answer": None}]
 
     def get(self, url, params=None, accept=None, optional=False):
-        if "/traffic/" in url:
-            return None if optional else Resp([])
         if url.endswith("/issues"):
             self.since.append((params or {}).get("since"))
             return Resp(self.issues)

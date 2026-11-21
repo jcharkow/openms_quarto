@@ -56,7 +56,6 @@ gh_daily = read_table("github_daily")
 issues = read_table("github_issues")
 contribs = read_table("github_contributors")
 releases = read_table("github_releases")
-traffic = read_table("github_traffic")
 dc_daily = read_table("discord_daily")
 dc_msgs = read_table("discord_messages")
 dc_members = read_table("discord_members")
@@ -299,17 +298,6 @@ if releases is not None and not releases.empty:
     fig
 else:
     none_msg("release")
-```
-
-```{python}
-#| title: Repository traffic (needs push access)
-if traffic is not None and not traffic.empty:
-    fig = px.line(traffic, x="date", y="uniques", color="kind", line_dash="repo",
-                  labels={"uniques": "Unique visitors", "date": ""})
-    fig.update_layout(margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h", y=1.1))
-    fig
-else:
-    none_msg("traffic")
 ```
 
 # Funder KPIs

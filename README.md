@@ -7,7 +7,7 @@ copied to a folder served by nginx/Caddy behind a login.
 ```
 ingest/common.py            shared cleaning helpers + survey column names
 ingest/tally.py             Tally API (or CSV export) -> survey_respondents, survey_choices
-ingest/github.py            stars, issues/PRs, commits, discussions, contributors, releases, traffic, daily counts
+ingest/github.py            stars, issues/PRs, commits, discussions, contributors, releases, daily counts
 ingest/packages.py          monthly Bioconda + PyPI downloads (public data)
 ingest/discord_snapshot.py  member list with join dates, daily member counts, message counts per channel/author
 dashboard/index.qmd         the Quarto dashboard (pages: Overview, Survey, GitHub, Discord, Survey → activity)
@@ -71,9 +71,8 @@ Tokens (all go into `.env`):
 **GitHub** (`GITHUB_TOKEN`): <https://github.com/settings/personal-access-tokens> → *Generate new
 token* (fine-grained), repository access *Public repositories* (read-only) is enough for issues,
 commits, releases and discussions. Without any token, discussions are
-skipped and the 60 requests/hour limit makes larger repos fail. Traffic (views/clones) additionally
-needs *Administration: read* on repos you own or admin; without it that card stays empty. GitHub keeps
-only 14 days of traffic, so that history builds up from the first run. List the repos and their
+skipped and the 60 requests/hour limit makes larger repos fail. Repo traffic (views/clones) is not
+collected: GitHub only gives it to tokens from accounts with push access. List the repos and their
 service packages in `GITHUB_REPOS` (keep the quotes, see `.env.example` and `FUNDER_METRICS.md`).
 
 **Discord** (`DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`): the bot only reads; it never posts and
@@ -142,4 +141,4 @@ location /community/ {
 - Use a manual CSV instead of the API: `.venv/bin/python -m ingest.tally --csv export.csv`
 - Check what the Tally API returns: `... -m ingest.tally --dump-raw raw.json` (contains personal data — delete after)
 - PDF report: `.venv/bin/python openms_survey_report.py export.csv -o report.pdf`
-- Data lives in `data/` (override with `OPENMS_DATA_DIR`). Back it up: Discord and traffic history can't be re-fetched.
+- Data lives in `data/` (override with `OPENMS_DATA_DIR`). Back it up: Discord history and the nightly GitHub counts can't be re-fetched.
