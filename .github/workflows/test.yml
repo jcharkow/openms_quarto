@@ -82,3 +82,12 @@ jobs:
             python scripts/make_fake_data.py > /dev/null
             cd dashboard && QUARTO_PYTHON="$PYTHON" quarto render index.qmd
             cd .. && python scripts/check_render.py dashboard/index.html --strict'
+      - name: Compose passes .env through like bash does (quotes, inline comments, pinned paths)
+        run: |
+          cp .env.example .env && chmod 600 .env
+          HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose run --rm -T dashboard bash -c '
+            set -e
+            test "$PYTHON" = /usr/local/bin/python && test "$DEPLOY_DIR" = /site && test "$OPENMS_DATA_DIR" = /app/data
+            test -z "$GITHUB_TOKEN" && test -z "$GITHUB_COMMITS_SINCE"
+            python -c "import os; from ingest.common import parse_mapping as p; m = p(os.environ[\"GITHUB_REPOS\"]); assert m[\"OpenMS/OpenMS\"] == [\"core\", \"python\"], m; print(m)"
+            id'

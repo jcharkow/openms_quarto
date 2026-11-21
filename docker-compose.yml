@@ -1,14 +1,24 @@
-# Nightly run (host cron):
-#   0 3 * * * cd /path/to/repo && docker compose run --rm dashboard >> /var/log/openms-dashboard.log 2>&1
+# Run via ./docker-refresh.sh (sets the user, creates folders, rebuilds from cache).
+# Nightly (host cron):
+#   0 3 * * * /path/to/repo/docker-refresh.sh >> /var/log/openms-dashboard.log 2>&1
 #
 # Serve SITE_DIR (default ./site) with your web server behind a login (see README).
 services:
   dashboard:
     build: .
     image: openms-dashboard
-    # write data/ and site/ as your user, not root (export UID GID or set them in the shell)
-    user: "${UID:-1000}:${GID:-1000}"
+    # write data/ and site/ as your user, not root (docker-refresh.sh sets these)
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    # .env is read by Compose on the host and passed in as variables, so its file permissions
+    # (chmod 600) don't matter inside the container
+    env_file: .env
+    # these win over env_file: the image's own paths, whatever .env says
+    environment:
+      PYTHON: /usr/local/bin/python
+      QUARTO: /usr/local/bin/quarto
+      DEPLOY_DIR: /site
+      OPENMS_DATA_DIR: /app/data
+      HOME: /tmp
     volumes:
-      - ./.env:/app/.env:ro                 # secrets + settings, read by refresh.sh
       - ./data:/app/data                    # parquet tables; history accumulates here
       - ${SITE_DIR:-./site}:/site           # rendered dashboard (index.html + index_files/)

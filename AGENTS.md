@@ -22,7 +22,7 @@ Studio in 2026). Keep it lightweight: no database, no app server, no SaaS in the
 | `FUNDER_METRICS.md` | Which de.NBI report KPIs are automated on the Funder KPIs page and which are still missing |
 | `ingest/discord_snapshot.py` | → `discord_daily`, `discord_members`, `discord_messages` |
 | `dashboard/index.qmd` | The whole dashboard (one file, `#` headings = pages) |
-| `Dockerfile`, `docker-compose.yml` | Image with Python deps + Quarto running `refresh.sh`; mounts `.env`, `data/`, site dir. CI builds it and renders fake data inside |
+| `Dockerfile`, `docker-compose.yml`, `docker-refresh.sh` | Image with Python deps + Quarto running `refresh.sh`. Compose passes `.env` via `env_file` (pinned paths in `environment:` win), mounts `data/` + site dir; `docker-refresh.sh` runs it as the host user. CI builds it, renders fake data inside and checks the `.env` pass-through |
 | `setup.sh` | Creates/repairs `.venv` (uv or venv+pip); `refresh.sh` calls it on first run or when `requirements.txt` changes |
 | `scripts/make_fake_data.py` | Fake data for every table, for offline testing |
 | `scripts/check_render.py` | Prints value boxes / placeholders of a rendered page; fails on tracebacks (`--strict`: also on placeholders) |
@@ -101,7 +101,7 @@ See `.claude/skills/` for step-by-step workflows.
   handles the known cases. Untitled checkbox questions become `Untitled checkboxes field (<option>)`
   to match the CSV export.
 - Plotly rejects a Python `range` for `y`: use a list.
-- `refresh.sh`: variables already set in the environment win over `.env` (the Docker image sets
-  `PYTHON`, `DEPLOY_DIR`, `HOME`). Keep it that way.
+- `refresh.sh`: variables already set in the environment win over `.env` (Docker sets
+  `PYTHON`, `QUARTO`, `DEPLOY_DIR`, `HOME`). Keep it that way.
 - `refresh.sh` uses `realpath -s` so a venv's python symlink isn't resolved to system python.
 - Quarto needs `jupyter` in the same Python (`QUARTO_PYTHON`).

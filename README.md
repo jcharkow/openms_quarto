@@ -21,30 +21,30 @@ the site must stay behind a login. No Discord message content is stored.
 
 ## Setup with Docker (recommended)
 
-The image contains Python, the dependencies and Quarto, so the host only needs Docker. Secrets,
-data and the rendered site stay on the host and are mounted in.
+The image contains Python, the dependencies and Quarto, so the host only needs Docker (with the
+Compose plugin). Secrets, data and the rendered site stay on the host.
 
 ```bash
 cp .env.example .env && chmod 600 .env && $EDITOR .env   # tokens: see "Tokens" below
-mkdir -p data site            # create them first, so they're owned by you and not by root
-docker compose build
-docker compose run --rm dashboard                        # one refresh: ingest + render -> ./site
+./docker-refresh.sh                                      # one refresh: ingest + render -> ./site
 ```
 
-- The rendered dashboard lands in `./site` (or set `SITE_DIR=/var/www/openms-dashboard` in the shell /
-  compose environment). Serve that folder behind a login (nginx example below).
-- `data/` holds the parquet tables, including history that can't be re-fetched — back it up; it is
+`docker-refresh.sh` creates `data/` and `site/`, rebuilds the image from cache (fast; picks up a
+`git pull`), and runs the container as your own user, so the files it writes stay yours (on rootless
+Docker it runs as container root, which is you on the host). `./docker-refresh.sh bash` opens a shell
+in the container for debugging.
+
+- The rendered dashboard lands in `./site`; set `SITE_DIR=/var/www/openms-dashboard` in the
+  environment to write elsewhere. Serve it behind a login (nginx example below).
+- `data/` holds the parquet tables, including history that can't be re-fetched — back it up. It is
   the same folder the non-Docker setup uses, so you can switch between both.
-- `QUARTO`, `PYTHON` and `DEPLOY_DIR` in `.env` are ignored inside the container (the image sets them).
-- The container runs as UID/GID 1000 by default; if your user differs:
-  `UID=$(id -u) GID=$(id -g) docker compose run --rm dashboard`.
-- After `git pull`, run `docker compose build` again to pick up code or dependency changes.
-- Make sure `.env` exists before running: if it's missing, Docker creates an empty *directory* named `.env`.
+- Compose reads `.env` on the host and passes the values in as variables. `PYTHON`, `QUARTO`,
+  `DEPLOY_DIR` and `OPENMS_DATA_DIR` from `.env` are ignored in the container (the image's paths win).
 
 Nightly cron:
 
 ```cron
-0 3 * * * cd /path/to/repo && docker compose run --rm dashboard >> /var/log/openms-dashboard.log 2>&1
+0 3 * * * /path/to/repo/docker-refresh.sh >> /var/log/openms-dashboard.log 2>&1
 ```
 
 ## Setup without Docker
