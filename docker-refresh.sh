@@ -19,7 +19,7 @@ PINNED='PYTHON|QUARTO|DEPLOY_DIR|OPENMS_DATA_DIR|HOME|HOST_UID|HOST_GID'
 mapfile -t KEYS < <(grep -oE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*=' .env \
                     | sed -E 's/^[[:space:]]*(export[[:space:]]+)?//; s/=$//' | grep -vxE "$PINNED" | sort -u)
 set -a; . ./.env; set +a
-ENV_ARGS=()
+ENV_ARGS=(-e OPENMS_DOCKER_WRAPPER=1)     # refresh.sh refuses to run in Docker without it
 for k in "${KEYS[@]}"; do ENV_ARGS+=(-e "$k"); done
 
 mkdir -p data "${SITE_DIR:-site}"

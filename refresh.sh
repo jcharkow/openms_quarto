@@ -8,6 +8,13 @@ if [ -f .env ]; then
   eval "$preset"
 fi
 
+# In Docker, .env only arrives via docker-refresh.sh; a plain `docker compose run` has no tokens
+if [ -f /.dockerenv ] && [ -z "${OPENMS_DOCKER_WRAPPER:-}" ]; then
+  echo "!! Started without docker-refresh.sh, so no .env settings or tokens reached the container." >&2
+  echo "   Run ./docker-refresh.sh instead of docker compose run/up." >&2
+  exit 1
+fi
+
 # Own .venv unless PYTHON is set: create/repair it on first run or when requirements change
 if [ -z "${PYTHON:-}" ]; then
   if ! .venv/bin/python -c "import ssl; ssl.create_default_context()" 2>/dev/null \
