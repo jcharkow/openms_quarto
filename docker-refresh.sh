@@ -29,11 +29,11 @@ export SITE_DIR=$SITE
 if docker info --format '{{.SecurityOptions}}' 2>/dev/null | grep -q rootless; then
   export HOST_UID=0 HOST_GID=0          # rootless Docker: container root maps to you on the host
 else
-  export HOST_UID=$(id -u) HOST_GID=$(id -g)
+  export HOST_UID=$(id -u) HOST_GID=$(id -g "$(id -un)")   # primary group, even under newgrp/sg
   for d in data "$SITE"; do
     if [ ! -w "$d" ] || [ -n "$(find "$d" ! -user "$(id -u)" -print -quit 2>/dev/null)" ]; then
       echo "!! $d/ contains files not owned by you (probably created by Docker as root). Fix once with:" >&2
-      echo "     sudo chown -R $(id -u):$(id -g) data $SITE" >&2
+      echo "     sudo chown -R $HOST_UID:$HOST_GID data $SITE" >&2
       exit 1
     fi
   done

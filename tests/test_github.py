@@ -76,3 +76,15 @@ def test_commits_discussions_and_services(data_dir, monkeypatch):
     assert read_table("github_discussions").category.tolist() == ["Q&A"]
     svc = read_table("github_repo_services")
     assert sorted(svc.service) == ["core", "python"]
+
+
+def test_empty_repo_list_and_repo_without_releases(data_dir, monkeypatch):
+    monkeypatch.setenv("GITHUB_REPOS", "")
+    monkeypatch.setattr(g, "GitHub", lambda token: FakeGitHub([]))
+    g.main()
+    assert read_table("github_daily") is None            # nothing written, dashboard shows placeholders
+
+    monkeypatch.setenv("GITHUB_REPOS", "o/r")
+    g.main()
+    rel = read_table("github_releases")
+    assert rel.empty and "repo" in rel.columns and "published_at" in rel.columns

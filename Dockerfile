@@ -27,6 +27,7 @@ ENV PYTHON=/usr/local/bin/python \
     QUARTO=/usr/local/bin/quarto \
     DEPLOY_DIR=/site \
     HOME=/tmp \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
 CMD ["./refresh.sh"]

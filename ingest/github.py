@@ -123,6 +123,9 @@ def main():
     gh = GitHub(os.environ.get("GITHUB_TOKEN"))
     mapping = parse_mapping(os.environ.get("GITHUB_REPOS", "OpenMS/OpenMS=core|python"))
     repos = list(mapping)
+    if not repos:
+        print("GitHub: GITHUB_REPOS is empty, nothing to do")
+        return
     today = datetime.now(timezone.utc).date()
     commits_since = pd.Timestamp(os.environ.get("GITHUB_COMMITS_SINCE") or f"{today.year - 3}-01-01")
     print(f"GitHub: {', '.join(repos)}")
@@ -208,8 +211,10 @@ def main():
     upsert("github_daily", pd.DataFrame(daily), ["date", "repo"])
     if stars:
         write_table(pd.DataFrame(stars), "github_stars")
-    write_table(pd.DataFrame(contribs), "github_contributors")
-    write_table(pd.DataFrame(releases), "github_releases")
+    # explicit columns: a repo without releases must still give a table the dashboard can filter
+    write_table(pd.DataFrame(contribs, columns=["repo", "login", "contributions", "is_bot"]), "github_contributors")
+    write_table(pd.DataFrame(releases, columns=["repo", "tag", "published_at", "prerelease", "asset", "downloads"]),
+                "github_releases")
     if issues:
         upsert("github_issues", pd.DataFrame(issues), ["repo", "number"])
     if traffic:
