@@ -52,8 +52,20 @@ def main():
     r_repo, _ = check(f"repo {repo}", f"/repos/{repo}")
     r_star, _ = check("stargazers", f"/repos/{repo}/stargazers?per_page=1",
                       accept="application/vnd.github.star+json")
+    check("stargazers (no timestamps)", f"/repos/{repo}/stargazers?per_page=1")
     check("commits", f"/repos/{repo}/commits?per_page=1")
     owner, name = repo.split("/", 1)
+    r_sg, sg = check("stargazers (GraphQL)", "/graphql", method="POST",
+                     json={"query": "query($o:String!,$n:String!){repository(owner:$o,name:$n)"
+                                    "{stargazerCount stargazers(first:3){totalCount edges{starredAt}}}}",
+                           "variables": {"o": owner, "n": name}})
+    if r_sg.ok:
+        if sg.get("errors"):
+            print(f"{'':<28} GraphQL error: {sg['errors'][0].get('message')}")
+        else:
+            rp = sg["data"]["repository"]
+            print(f"{'':<28} stargazerCount {rp['stargazerCount']}, list totalCount "
+                  f"{rp['stargazers']['totalCount']}, first dates {[e['starredAt'] for e in rp['stargazers']['edges']]}")
     r_gql, gql = check("discussions (GraphQL)", "/graphql", method="POST",
                        json={"query": "query($o:String!,$n:String!){repository(owner:$o,name:$n)"
                                       "{hasDiscussionsEnabled}}", "variables": {"o": owner, "n": name}})
