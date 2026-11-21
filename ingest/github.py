@@ -54,6 +54,11 @@ class GitHub:
                 time.sleep(min(wait, 3600))
                 continue
             if optional and r.status_code in (401, 403, 404):
+                try:
+                    reason = r.json().get("message", "")
+                except ValueError:
+                    reason = ""
+                self.last_skip = f"HTTP {r.status_code} {reason}".strip()
                 return None  # e.g. no token / no push access
             if r.status_code == 202:  # stats being computed by GitHub
                 time.sleep(3)
@@ -66,7 +71,12 @@ class GitHub:
         while url:
             r = self.get(url, params, accept, optional)
             if r is None:
-                print(f"  skipped {url.split('?')[0]} (needs a GITHUB_TOKEN with access)")
+                why = getattr(self, "last_skip", "")
+                session = getattr(self, "s", None)
+                has_token = session is not None and "Authorization" in session.headers
+                hint = ("token lacks access: fine-grained tokens need Repository access = Public repositories"
+                        if has_token else "no GITHUB_TOKEN set")
+                print(f"  skipped {url.split('?')[0]} ({why}; {hint})")
                 return
             yield from r.json()
             url, params = r.links.get("next", {}).get("url"), None
