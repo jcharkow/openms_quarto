@@ -1,0 +1,18 @@
+# Secrets, data and outputs are mounted at run time, never copied into the image
+.env
+data/
+site/
+reference/
+*.pdf
+*.csv
+*.json
+*.xlsx
+.venv/
+.git/
+.github/
+.pytest_cache/
+__pycache__/
+dashboard/index.html
+dashboard/index_files/
+dashboard/.quarto/
+dashboard/_site/

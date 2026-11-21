@@ -12,3 +12,4 @@ dashboard/index.html
 *.json
 *.xls
 *.xlsx
+site/

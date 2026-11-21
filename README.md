@@ -19,7 +19,35 @@ openms_survey_report.py     the old one-off PDF report (still works, uses ingest
 count unique people). GitHub/Discord handles are kept so sign-ups can be matched to activity —
 the site must stay behind a login. No Discord message content is stored.
 
-## Setup (server)
+## Setup with Docker (recommended)
+
+The image contains Python, the dependencies and Quarto, so the host only needs Docker. Secrets,
+data and the rendered site stay on the host and are mounted in.
+
+```bash
+cp .env.example .env && chmod 600 .env && $EDITOR .env   # tokens: see "Tokens" below
+mkdir -p data site            # create them first, so they're owned by you and not by root
+docker compose build
+docker compose run --rm dashboard                        # one refresh: ingest + render -> ./site
+```
+
+- The rendered dashboard lands in `./site` (or set `SITE_DIR=/var/www/openms-dashboard` in the shell /
+  compose environment). Serve that folder behind a login (nginx example below).
+- `data/` holds the parquet tables, including history that can't be re-fetched — back it up; it is
+  the same folder the non-Docker setup uses, so you can switch between both.
+- `QUARTO`, `PYTHON` and `DEPLOY_DIR` in `.env` are ignored inside the container (the image sets them).
+- The container runs as UID/GID 1000 by default; if your user differs:
+  `UID=$(id -u) GID=$(id -g) docker compose run --rm dashboard`.
+- After `git pull`, run `docker compose build` again to pick up code or dependency changes.
+- Make sure `.env` exists before running: if it's missing, Docker creates an empty *directory* named `.env`.
+
+Nightly cron:
+
+```cron
+0 3 * * * cd /path/to/repo && docker compose run --rm dashboard >> /var/log/openms-dashboard.log 2>&1
+```
+
+## Setup without Docker
 
 ```bash
 # 1. Quarto: https://quarto.org/docs/download/  (tested with 1.12.1)

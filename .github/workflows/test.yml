@@ -67,3 +67,18 @@ jobs:
           name: dashboard-preview
           path: ${{ runner.temp }}/site
           retention-days: 7
+
+  docker:
+    name: Docker image (build + fake-data render)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t openms-dashboard .
+      - name: Render fake data inside the container (as a non-root user, like docker compose)
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -e OPENMS_DATA_DIR=/tmp/fake openms-dashboard bash -c '
+            set -e
+            python scripts/make_fake_data.py > /dev/null
+            cd dashboard && QUARTO_PYTHON="$PYTHON" quarto render index.qmd
+            cd .. && python scripts/check_render.py dashboard/index.html --strict'

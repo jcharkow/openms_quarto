@@ -1,0 +1,14 @@
+# Nightly run (host cron):
+#   0 3 * * * cd /path/to/repo && docker compose run --rm dashboard >> /var/log/openms-dashboard.log 2>&1
+#
+# Serve SITE_DIR (default ./site) with your web server behind a login (see README).
+services:
+  dashboard:
+    build: .
+    image: openms-dashboard
+    # write data/ and site/ as your user, not root (export UID GID or set them in the shell)
+    user: "${UID:-1000}:${GID:-1000}"
+    volumes:
+      - ./.env:/app/.env:ro                 # secrets + settings, read by refresh.sh
+      - ./data:/app/data                    # parquet tables; history accumulates here
+      - ${SITE_DIR:-./site}:/site           # rendered dashboard (index.html + index_files/)

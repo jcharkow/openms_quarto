@@ -2,7 +2,11 @@
 # Nightly: fetch data, render the dashboard, publish it. Each source fails independently.
 set -uo pipefail
 cd "$(dirname "$0")"
-[ -f .env ] && set -a && . ./.env && set +a
+if [ -f .env ]; then
+  preset=$(export -p)               # variables already in the environment win over .env
+  set -a; . ./.env; set +a          # (e.g. DEPLOY_DIR/PYTHON set by the Docker image)
+  eval "$preset"
+fi
 
 # Own .venv unless PYTHON is set: create/repair it on first run or when requirements change
 if [ -z "${PYTHON:-}" ]; then
