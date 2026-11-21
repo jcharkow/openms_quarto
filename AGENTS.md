@@ -22,6 +22,7 @@ Studio in 2026). Keep it lightweight: no database, no app server, no SaaS in the
 | `FUNDER_METRICS.md` | Which de.NBI report KPIs are automated on the Funder KPIs page and which are still missing |
 | `ingest/discord_snapshot.py` | → `discord_daily`, `discord_members`, `discord_messages` |
 | `dashboard/index.qmd` | The whole dashboard (one file, `#` headings = pages) |
+| `setup.sh` | Creates/repairs `.venv` (uv or venv+pip); `refresh.sh` calls it on first run or when `requirements.txt` changes |
 | `scripts/make_fake_data.py` | Fake data for every table, for offline testing |
 | `scripts/check_render.py` | Prints value boxes / placeholders of a rendered page; fails on tracebacks (`--strict`: also on placeholders) |
 | `tests/` | pytest unit tests for ingest + survey cleaning (fake API clients, no network) |

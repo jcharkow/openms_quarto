@@ -23,8 +23,9 @@ the site must stay behind a login. No Discord message content is stored.
 
 ```bash
 # 1. Quarto: https://quarto.org/docs/download/  (tested with 1.12.1)
-# 2. Python env
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+# 2. Python env: optional, refresh.sh runs this itself on the first run (uses uv if installed).
+#    Re-run with --dev for pytest. Set PYTHON=... in .env to use another interpreter (e.g. conda).
+./setup.sh
 # 3. Secrets
 cp .env.example .env && chmod 600 .env && $EDITOR .env
 # 4. First run
