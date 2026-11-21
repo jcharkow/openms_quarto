@@ -74,8 +74,11 @@ def main():
     r_traffic, _ = check("traffic (optional)", f"/repos/{repo}/traffic/views")
 
     print()
-    if r_repo.ok and r_star.ok and r_gql.ok and not gql.get("errors"):
+    if r_repo.ok and r_gql.ok and not gql.get("errors") and (r_star.ok or r_star.status_code == 404):
         print("-> Token works for everything the dashboard needs.")
+        if r_star.status_code == 404:
+            print("   (GitHub doesn't expose the stargazer list for this repo; star history comes from the\n"
+                  "    nightly star counts instead. Nothing to fix on your side.)")
     elif r_star.status_code in (401, 403) or r_repo.status_code == 404:
         print("-> Token is valid but can't read this repo. Fine-grained token: set Repository access to\n"
               "   'Public repositories' (or 'All repositories'). Or use a classic token with no scopes ticked.")

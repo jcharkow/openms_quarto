@@ -72,6 +72,10 @@ class GitHub:
             r = self.get(url, params, accept, optional)
             if r is None:
                 why = getattr(self, "last_skip", "")
+                if url.split("?")[0].endswith("/stargazers") and why.startswith("HTTP 404"):
+                    print(f"  skipped {url.split('?')[0]} ({why}; GitHub doesn't expose this star list —"
+                          f" star history comes from the nightly counts in github_daily)")
+                    return
                 session = getattr(self, "s", None)
                 has_token = session is not None and "Authorization" in session.headers
                 hint = ("token lacks access: fine-grained tokens need Repository access = Public repositories"

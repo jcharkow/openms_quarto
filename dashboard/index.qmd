@@ -126,6 +126,12 @@ if stars is not None and not stars.empty:
     fig = px.line(s, x="starred_at", y="Stars", color="repo", labels={"starred_at": ""})
     fig.update_layout(margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h", y=1.1))
     fig
+elif gh_daily is not None and not gh_daily.empty:
+    # GitHub often refuses the stargazer list (404, even with a token): use the nightly star counts
+    fig = px.line(gh_daily.sort_values("date"), x="date", y="stars", color="repo", markers=True,
+                  labels={"date": "", "stars": "Stars"})
+    fig.update_layout(margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h", y=1.1))
+    fig
 else:
     none_msg("GitHub")
 ```
@@ -354,9 +360,26 @@ def repo_metrics(repos):
     if releases is not None:
         r = releases[releases.repo.isin(repos)].drop_duplicates(["repo", "tag"])
         rows["Releases published (incl. prereleases)"] = in_periods(r.published_at)
-    if stars is not None:
+    if stars is not None and not stars.empty:
         rows["Stars added (still present)"] = in_periods(stars[stars.repo.isin(repos)].starred_at)
+    elif gh_daily is not None and not gh_daily.empty:
+        rows["Stars added (net, from nightly counts)"] = net_stars(repos)
     return rows
+
+def net_stars(repos):
+    """Net star change per period from the nightly counts; '–' unless a count exists at/before the start."""
+    d = gh_daily[gh_daily.repo.isin(repos)].sort_values("date")
+    out = []
+    for _, a, b in PERIODS:
+        vals = []
+        for _, g in d.groupby("repo"):
+            before, upto = g[g.date <= a], g[g.date < b]
+            if before.empty or upto.empty:
+                vals = None
+                break
+            vals.append(int(upto.stars.iloc[-1]) - int(before.stars.iloc[-1]))
+        out.append(sum(vals) if vals else "–")
+    return out
 
 def downloads(channel, package):
     """Downloads per period; '–' where no month of the period has been collected."""
@@ -454,6 +477,9 @@ they move forward automatically each January.
   counted once across repos, and "not shared" shows commits found in no other tracked repo.
   Service rows count each repo once, but one repo can serve several packages
   (e.g. OpenMS/OpenMS for Core and Python), so service rows must not be summed either.
+- **Stars**: GitHub usually refuses the list of stargazers, so stars added are the net change in the
+  nightly star counts (“–” until a count exists at the start of the period; history starts with the
+  first run).
 - **Downloads** are download events (CI and dependencies included), not users. Bioconda months appear
   once Anaconda publishes them, so the YTD column lags by a month; “–” means no month collected.
 - Repo-wide activity includes the wider community, not only funded work.

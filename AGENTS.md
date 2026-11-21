@@ -93,7 +93,8 @@ See `.claude/skills/` for step-by-step workflows.
   (`name=core|python`, parsed by `parse_mapping`).
 - Bioconda monthly files are ~10 MB each; `ingest.packages` skips months it already has. Don't
   backfill many months in tests.
-- GitHub `/stargazers` requires a token (401 anonymously); traffic needs push/admin access.
+- GitHub `/stargazers` requires a token (401 anonymously) and often returns 404 / an empty GraphQL
+  list even with a valid token; star history then comes from `github_daily`. Traffic needs push access.
   Anonymous rate limit is 60 req/h — test against small repos (e.g. `OpenMS/umetaflow`).
 - Discord member list needs the bot's **Server Members Intent**; without it the API returns 403.
   Discord IDs are snowflakes: page with `after=max(id)`, not list order.
